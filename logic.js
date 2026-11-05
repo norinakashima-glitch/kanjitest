@@ -129,15 +129,20 @@
     } else {
       q = qs[Math.floor(rng() * qs.length)];
     }
-    var sentences = [q.sentence].concat(q.alts || []).filter(Boolean);
-    var sentence = reason === '新規' ? q.sentence : sentences[Math.floor(rng() * sentences.length)];
+    // 新しい語はいつもの例文、復習では「別の例文」もまぜる。どれを出したかは記録に残す
+    var a1 = q.alt1 !== undefined ? q.alt1 : (q.alts || [])[0];
+    var a2 = q.alt2 !== undefined ? q.alt2 : (q.alts || [])[1];
+    var variants = [{ text: q.sentence, name: '例文' }];
+    if (a1) variants.push({ text: a1, name: '別の例文1' });
+    if (a2) variants.push({ text: a2, name: '別の例文2' });
+    var v = reason === '新規' ? variants[0] : variants[Math.floor(rng() * variants.length)];
     var choices = [{ text: q.reading, correct: true, type: '' }];
     for (var i = 0; i < 3; i++) {
       choices.push({ text: q.wrongs[i], correct: false, type: (q.wrongTypes && q.wrongTypes[i]) || '' });
     }
     return {
       qid: q.id, key: k, word: q.word, reading: q.reading, type: TYPE_READING,
-      sentence: sentence, choices: shuffle(choices, rng), hint: q.hint || '',
+      sentence: v.text, variant: v.name, choices: shuffle(choices, rng), hint: q.hint || '',
       source: q.source || '', reason: reason, grade: Number(q.grade) || 9
     };
   }
@@ -219,6 +224,11 @@
     return { streak: streak, total: Object.keys(done).length, doneToday: !!done[today], days: done };
   }
 
+  /* 画面に出る字の数（空白、［ ］、ふりがなは数えない） */
+  function sentenceLength(sentence) {
+    return String(sentence).replace(/\{([^|}]+)\|[^}]+\}/g, '$1').replace(/[\s［］]/g, '').length;
+  }
+
   /* 例文の表示用：［語］を目立たせ、{字|よみ} をふりがなにする */
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -248,6 +258,6 @@
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
-    sentenceHtml: sentenceHtml, escapeHtml: escapeHtml
+    sentenceHtml: sentenceHtml, sentenceLength: sentenceLength, escapeHtml: escapeHtml
   };
 });

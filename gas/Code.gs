@@ -16,7 +16,8 @@ var TZ = 'Asia/Tokyo';
 var Q_HEADERS = ['ID', '種類', '語', '読み', '例文', '誤答1', '誤答2', '誤答3', '誤答の種類', 'ヒント',
   '別の例文1', '別の例文2', '字', '学年', '教科', '出典', '有効', '追加日', 'メモ'];
 var R_HEADERS = ['記録ID', '日時', '日付', 'セッション', '何問目', '全問数', '問題ID', '語', '字', '問題の種類',
-  '正誤', '選んだ選択肢', '誤答の種類', '正しい読み', '回答時間(秒)', 'ヒント', '出題区分', '出典'];
+  '正誤', '選んだ選択肢', '誤答の種類', '正しい読み', '回答時間(秒)', 'ヒント', '出題区分', '出典',
+  '出した例文', '例文の字数'];
 var T_HEADERS = ['日付', '教科', '単元', '問題番号', '答え方の形式', '結果', 'ミスの種類', '正しい答え',
   '書いた答え', 'メモ', '問題データに追加'];
 
@@ -225,6 +226,8 @@ function readQuestions_() {
       wrongTypes: get(r, '誤答の種類').split(/[,、，]/).map(function (s) { return s.trim(); }),
       hint: get(r, 'ヒント'),
       alts: [get(r, '別の例文1'), get(r, '別の例文2')].filter(String),
+      alt1: get(r, '別の例文1'),
+      alt2: get(r, '別の例文2'),
       kanji: get(r, '字'),
       grade: get(r, '学年'),
       subject: get(r, '教科'),
@@ -277,6 +280,8 @@ function writeResults_(rows) {
       set('ヒント', x.hint ? '使った' : '');
       set('出題区分', String(x.reason || ''));
       set('出典', String(x.source || ''));
+      set('出した例文', String(x.variant || ''));
+      set('例文の字数', Number(x.slen) || '');
       out.push(row);
     });
     if (out.length) sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);

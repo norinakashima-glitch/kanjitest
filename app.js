@@ -316,7 +316,9 @@
       ms: ms,
       hint: hintUsed,
       reason: it.reason,
-      source: it.source || ''
+      source: it.source || '',
+      variant: it.variant || '例文',
+      slen: L.sentenceLength(it.sentence)
     };
     session.results.push({ reason: it.reason, correct: rec.correct });
     session.idx++;
