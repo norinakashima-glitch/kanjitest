@@ -11,6 +11,9 @@
     .qr svg { width: 100%; max-width: 320px; height: auto; }
     .link { word-break: break-all; font-size: .85rem; color: var(--ink-soft); }
     ol { padding-left: 1.3em; }
+    .check { display: flex; gap: 10px; align-items: center; font-weight: 700; margin: 16px 0 4px; }
+    .check input { width: 22px; height: 22px; padding: 0; flex: none; }
+    .for { font-weight: 700; margin: 0 0 6px; }
   </style>
 </head>
 <body>
@@ -20,15 +23,18 @@
       <li>Apps Script の「ウェブアプリの URL」と「アクセスキー」を下に入れます。</li>
       <li>「接続をためす」で、つながるか確認します。</li>
       <li>子どものスマホのカメラで QR コードを読み、開いたページを「ホーム画面に追加」します。</li>
+      <li>親のスマホやパソコンで試すときは、下の「親の端末として設定する」にチェックしてから QR を読みます。その端末では、答えても記録しません。</li>
     </ol>
     <p>入れた内容はこのページの中だけで使い、どこにも送りません（接続テストを除く）。</p>
     <label for="url">ウェブアプリの URL</label>
     <input id="url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
     <label for="key">アクセスキー</label>
     <input id="key" type="text" autocomplete="off" spellcheck="false">
+    <label class="check"><input id="demo" type="checkbox"> 親の端末として設定する（おためし専用：答えても記録しない）</label>
     <button class="chunky" id="test">接続をためす</button>
     <p class="msg" id="msg"></p>
     <div id="out" hidden>
+      <p class="for" id="for"></p>
       <div class="qr" id="qr"></div>
       <p class="link" id="link"></p>
       <button class="chunky" id="copy">リンクをコピー</button>
@@ -42,7 +48,7 @@
       function link() {
         var u = $('url').value.trim(), k = $('key').value.trim();
         if (!u || !k) return '';
-        return base + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k);
+        return base + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k) + ($('demo').checked ? '&d=1' : '');
       }
       function draw() {
         var l = link();
@@ -53,10 +59,12 @@
         q.make();
         $('qr').innerHTML = q.createSvgTag(6, 2);
         $('link').textContent = l;
+        $('for').textContent = $('demo').checked ? '親の端末で読む QR（おためし専用）' : '子どものスマホで読む QR';
       }
       function say(t, good) { $('msg').textContent = t; $('msg').className = 'msg ' + (good ? 'good' : 'bad'); }
       $('url').addEventListener('input', draw);
       $('key').addEventListener('input', draw);
+      $('demo').addEventListener('change', draw);
       $('test').addEventListener('click', function () {
         var u = $('url').value.trim(), k = $('key').value.trim();
         if (!/^https:\/\/script\.google\.com\//.test(u)) { say('URL は https://script.google.com/ で始まるものを入れてください。'); return; }

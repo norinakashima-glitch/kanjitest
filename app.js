@@ -8,7 +8,8 @@
     questions: 'kt_questions',
     log: 'kt_log',
     outbox: 'kt_outbox',
-    session: 'kt_session'
+    session: 'kt_session',
+    demoDevice: 'kt_demo_device'
   };
   var PRAISE = ['せいかい！', 'いいね！', 'ナイス！', 'そのとおり！', 'やったね！'];
   var app = document.getElementById('app');
@@ -31,6 +32,8 @@
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
+  // おためし専用の端末（親のスマホやPC）。答えても記録しない
+  function isDemoDevice() { return load(KEYS.demoDevice, false) === true; }
   function getConfig() {
     var c = load(KEYS.config, null);
     return c && c.url && c.key ? c : null;
@@ -43,7 +46,11 @@
     var p = new URLSearchParams(h);
     var u = p.get('u'), k = p.get('k');
     history.replaceState(null, '', location.pathname + location.search);
-    if (u && k) { save(KEYS.config, { url: u, key: k }); return true; }
+    if (u && k) {
+      save(KEYS.config, { url: u, key: k });
+      if (p.get('d') === '1') save(KEYS.demoDevice, true);
+      return true;
+    }
     return false;
   }
 
@@ -106,6 +113,20 @@
     }).catch(function () { return false; });
   }
 
+  // おためし専用の端末は、いつもシートの最新の記録を写して、その日の本番と同じ出題にする
+  function loadHistory() {
+    if (!isDemoDevice()) return restoreIfEmpty();
+    return syncNow().then(function () { return api('history', {}, 25000); }).then(function (d) {
+      save(KEYS.log, d.rows || []);
+      return true;
+    }).catch(function () { return false; });
+  }
+
+  function demoBanner(canStop) {
+    return '<div class="demo-banner" role="note"><span>おためし中：きろくしません</span>' +
+      (canStop ? '<button class="text-btn" data-act="stop-demo">やめる</button>' : '') + '</div>';
+  }
+
   function addRecord(rec) {
     var log = load(KEYS.log, []);
     log.push(rec);
@@ -133,6 +154,8 @@
     if (!hasQ) {
       action = '<p class="notice">もんだいを まだ よみこめていません。インターネットに つないで、もういちど ひらいてね。</p>' +
         '<button class="chunky go start" data-act="retry">よみこむ</button>';
+    } else if (isDemoDevice()) {
+      action = '<button class="chunky go start" data-act="start">おためしスタート<small>きょうの 30もん</small></button>';
     } else if (stats.doneToday) {
       action = '<p class="done-note">きょうの ぶんは おわり！<span>また あした やろうね</span></p>' +
         '<div class="foot"><button class="text-btn" data-act="start">もう1かい やる</button></div>';
@@ -145,6 +168,7 @@
     }
     app.innerHTML =
       '<section class="home">' +
+      (isDemoDevice() ? demoBanner(false) : '') +
       '<h1 class="title">よみの れんしゅう<small>かんじを よんでみよう</small></h1>' +
       (notice ? '<p class="notice">' + esc(notice) + '</p>' : '') +
       '<ol class="stamps" aria-label="さいきんの 14にち">' + stamps + '</ol>' +
@@ -185,6 +209,7 @@
   var shownAt = 0, hiddenAt = 0, answered = false, hintUsed = false;
 
   function startSession() {
+    if (isDemoDevice()) { startDemo(false); return; }
     var t = today();
     var s = load(KEYS.session, null);
     if (s && s.date === t && s.idx < s.items.length) {
@@ -196,6 +221,24 @@
       save(KEYS.session, session);
     }
     renderQuiz();
+  }
+
+  // おためし：その日の本番と同じ決め方で出題し、記録はしない
+  function startDemo(oneTime) {
+    var t = today();
+    var s = isDemoDevice() ? null : load(KEYS.session, null);
+    var items = s && s.date === t && s.idx < s.items.length ?
+      JSON.parse(JSON.stringify(s.items)) : L.buildSession(questions(), load(KEYS.log, []), t);
+    if (!items.length) { renderParent('問題がありません。問題を読みなおしてください。'); return; }
+    S.unlock();
+    session = { sid: 'demo', date: t, items: items, idx: 0, results: [], demo: true, oneTime: oneTime };
+    renderQuiz();
+  }
+
+  function stopDemo() {
+    var oneTime = session && session.oneTime;
+    session = null;
+    if (oneTime) renderParent(); else renderHome();
   }
 
   function ballLeft(done, total) {
@@ -210,6 +253,7 @@
     hintUsed = false;
     app.innerHTML =
       '<section class="quiz">' +
+      (session.demo ? demoBanner(true) : '') +
       '<div class="topbar">' +
       '<div class="pitch" role="progressbar" aria-valuemin="0" aria-valuemax="' + total + '" aria-valuenow="' + session.idx + '">' +
       '<span class="goal"></span><span class="ball" style="left:' + ballLeft(session.idx, total) + '">⚽</span></div>' +
@@ -226,6 +270,8 @@
       '<p class="praise" aria-live="polite"></p>' +
       '<div class="after"></div>' +
       '</section>';
+    var sd = app.querySelector('[data-act="stop-demo"]');
+    if (sd) sd.addEventListener('click', stopDemo);
     var hb = app.querySelector('[data-act="hint"]');
     if (hb) hb.addEventListener('click', function () {
       hintUsed = true;
@@ -272,11 +318,13 @@
       reason: it.reason,
       source: it.source || ''
     };
-    addRecord(rec);
     session.results.push({ reason: it.reason, correct: rec.correct });
     session.idx++;
-    save(KEYS.session, session);
-    syncNow();
+    if (!session.demo) {
+      addRecord(rec);
+      save(KEYS.session, session);
+      syncNow();
+    }
 
     var ball = app.querySelector('.ball');
     if (ball) ball.style.left = ballLeft(session.idx, total);
@@ -313,6 +361,12 @@
     var fresh = res.filter(function (r) { return r.reason === '新規' && r.correct; }).length;
     var review = res.filter(function (r) { return (r.reason === '復習' || r.reason === '確認') && r.correct; }).length;
     var total = session.items.length;
+    if (session.demo) {
+      var oneTime = session.oneTime;
+      session = null;
+      renderEnd(total, fresh, review, { oneTime: oneTime });
+      return;
+    }
     save(KEYS.session, null);
     session = null;
     syncNow();
@@ -320,25 +374,29 @@
   }
 
   /* ---------- がめん：ゴール ---------- */
-  function renderEnd(total, fresh, review) {
+  function renderEnd(total, fresh, review, demo) {
     screen = 'end';
     var stats = L.dayStats(load(KEYS.log, []), today());
     app.innerHTML =
       '<section class="end">' +
+      (demo ? demoBanner(false) : '') +
       '<div class="end-pitch" aria-hidden="true"><span class="goal"></span><span class="ball">⚽</span></div>' +
       '<p class="goal-word">ゴール！</p>' +
       '<p class="end-sub">' + total + 'もん おわったよ</p>' +
+      (demo ? '<p class="notice">おためしなので、きろくは して いません。</p>' :
       '<div class="stats">' +
       '<div class="stat"><span>れんぞく</span><b>' + stats.streak + '</b><i>にち</i></div>' +
       '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
-      '</div>' +
+      '</div>') +
       '<ul class="end-list">' +
       (fresh ? '<li>はじめての ことば　' + fresh + 'こ せいかい</li>' : '') +
       (review ? '<li>ふくしゅう　' + review + 'こ できた</li>' : '') +
       '</ul>' +
       '<button class="chunky go" data-act="home">おわる</button>' +
       '</section>';
-    app.querySelector('[data-act="home"]').addEventListener('click', function () { renderHome(); });
+    app.querySelector('[data-act="home"]').addEventListener('click', function () {
+      if (demo && demo.oneTime) renderParent(); else renderHome();
+    });
     S.play('goal');
   }
 
@@ -353,16 +411,19 @@
       '<section class="panel">' +
       '<h1>おうちのひと</h1>' +
       '<dl>' +
+      '<dt>この端末</dt><dd>' + (isDemoDevice() ? 'おためし専用（記録しません）' : '本番用') + '</dd>' +
       '<dt>接続</dt><dd>' + (cfg ? '設定済み' : '未設定') + '</dd>' +
       '<dt>問題</dt><dd>' + (qc ? qc.items.length + '問（' + esc(new Date(qc.at).toLocaleString('ja-JP')) + ' に取得）' : 'まだ取得していません') + '</dd>' +
       '<dt>記録</dt><dd>' + log.length + '件</dd>' +
       '<dt>未送信</dt><dd>' + box.length + '件</dd>' +
       '</dl>' +
       '<p class="msg' + (msg ? (good ? ' good' : ' bad') : '') + '">' + esc(msg || '') + '</p>' +
+      (isDemoDevice() ? '' : '<button class="chunky" data-act="demo">おためしで やってみる（記録しない）</button>') +
       '<button class="chunky" data-act="sync">記録をいま送る</button>' +
       '<button class="chunky" data-act="reload">問題を読みなおす</button>' +
       (installPrompt ? '<button class="chunky" data-act="install">ホーム画面に追加</button>' : '') +
       '<button class="chunky" data-act="setup">接続先を設定しなおす</button>' +
+      '<button class="chunky" data-act="demo-device">' + (isDemoDevice() ? 'おためし専用をやめる' : 'この端末をおためし専用にする') + '</button>' +
       '<button class="chunky go" data-act="back">もどる</button>' +
       '</section>';
     app.querySelectorAll('[data-act]').forEach(function (b) {
@@ -370,6 +431,19 @@
         var a = b.getAttribute('data-act');
         if (a === 'back') renderHome();
         else if (a === 'setup') renderSetup();
+        else if (a === 'demo') startDemo(true);
+        else if (a === 'demo-device') {
+          if (isDemoDevice()) {
+            if (!confirm('この端末で答えた記録を、シートに送るようにもどします。子どもが使う端末だけで選んでください。')) return;
+            save(KEYS.demoDevice, false);
+            renderParent('本番用にもどしました。', true);
+          } else {
+            if (!confirm('この端末では、答えても記録しなくなります。子どものスマホでは選ばないでください。')) return;
+            save(KEYS.demoDevice, true);
+            b.disabled = true;
+            loadHistory().then(function () { renderParent('おためし専用にしました。', true); });
+          }
+        }
         else if (a === 'sync') {
           b.disabled = true;
           syncNow().then(function (ok) {
@@ -422,7 +496,7 @@
 
   function connectAndGo(onFail) {
     api('ping').then(function () {
-      return Promise.all([refreshQuestions(), restoreIfEmpty()]);
+      return Promise.all([refreshQuestions(), loadHistory()]);
     }).then(function () {
       syncNow();
       renderHome();
@@ -472,7 +546,7 @@
     renderHome();
     Promise.all([
       refreshQuestions().catch(function () { return null; }),
-      restoreIfEmpty()
+      loadHistory()
     ]).then(function () {
       if (screen === 'home') renderHome();
       syncNow();
