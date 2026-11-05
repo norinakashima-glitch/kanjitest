@@ -10,7 +10,8 @@
     log: 'kt_log',
     outbox: 'kt_outbox',
     session: 'kt_session',
-    demoDevice: 'kt_demo_device'
+    demoDevice: 'kt_demo_device',
+    reconciled: 'kt_reconciled'
   };
   var PRAISE = ['せいかい！', 'いいね！', 'ナイス！', 'そのとおり！', 'やったね！'];
   var app = document.getElementById('app');
@@ -102,40 +103,40 @@
     return syncing;
   }
 
-  // 端末の記録が空なら（機種変更やデータ消去のあと）、シートの記録から戻す
-  function restoreIfEmpty() {
-    if (load(KEYS.log, []).length) return Promise.resolve(false);
-    return api('history', {}, 25000).then(function (d) {
-      if (d.rows && d.rows.length && !load(KEYS.log, []).length) {
-        save(KEYS.log, d.rows);
-        return true;
-      }
-      return false;
-    }).catch(function () { return false; });
+  // シートの「結果」を正にして、端末の記録をそろえる（ひらいたとき1日1回。「おうちのひと」のボタンでは いつでも）
+  // シートで消した記録は端末からも消え、シートにあって端末にない記録は足される
+  // まだ送れていない記録と、そろえているあいだに答えた記録はのこす
+  function reconcileLog(force) {
+    if (!getConfig()) return Promise.reject(new Error('no-config'));
+    var t = today();
+    // 端末の記録が空のとき（機種変更やデータ消去のあと）は、その日にそろえていても もう一度シートから戻す
+    if (!force && load(KEYS.reconciled, '') === t && load(KEYS.log, []).length) return Promise.resolve(null);
+    var before = {};
+    load(KEYS.log, []).forEach(function (r) { before[r.id] = true; });
+    return syncNow().then(function () { return api('history', {}, 25000); }).then(function (d) {
+      var rows = d.rows || [];
+      var keep = {};
+      rows.forEach(function (r) { keep[r.id] = true; });
+      var extra = load(KEYS.outbox, []).concat(load(KEYS.log, []).filter(function (r) { return !before[r.id]; }));
+      var merged = rows.slice();
+      extra.forEach(function (r) { if (!keep[r.id]) { keep[r.id] = true; merged.push(r); } });
+      save(KEYS.log, merged);
+      // 問題のとちゅうでなければ、シートにない回の続きと、まだ1問も答えていない回は作りなおす
+      var s = load(KEYS.session, null);
+      if (s && screen !== 'quiz' &&
+          (!s.idx || !merged.some(function (r) { return r.sid === s.sid; }))) save(KEYS.session, null);
+      save(KEYS.reconciled, t);
+      return merged.length;
+    });
   }
 
   // おためし専用の端末は、いつもシートの最新の記録を写して、その日の本番と同じ出題にする
-  function loadHistory() {
-    if (!isDemoDevice()) return restoreIfEmpty();
+  function loadHistory(force) {
+    if (!isDemoDevice()) return reconcileLog(!!force).catch(function () { return null; });
     return syncNow().then(function () { return api('history', {}, 25000); }).then(function (d) {
       save(KEYS.log, d.rows || []);
       return true;
     }).catch(function () { return false; });
-  }
-
-  // この端末の記録を、シートの「結果」と同じにする（シートで記録を消したときに使う）
-  // 送れていない記録が残っているときは、なくさないように中止する
-  function resyncLog() {
-    return syncNow().then(function () {
-      if (load(KEYS.outbox, []).length) throw new Error('outbox');
-      return api('history', {}, 25000);
-    }).then(function (d) {
-      var rows = d.rows || [];
-      save(KEYS.log, rows);
-      var s = load(KEYS.session, null);
-      if (s && !rows.some(function (r) { return r.sid === s.sid; })) save(KEYS.session, null);
-      return rows.length;
-    });
   }
 
   function demoBanner(canStop) {
@@ -154,6 +155,7 @@
 
   /* ---------- がめん：ホーム ---------- */
   function renderHome(notice) {
+    if (reloadPending) { location.reload(); return; }
     screen = 'home';
     FX.clear();
     var t = today();
@@ -528,11 +530,10 @@
         } else if (a === 'resync') {
           if (!confirm('この端末の記録を、スプレッドシートの「結果」と同じにします。シートで消した記録は、この端末からも消えます。')) return;
           b.disabled = true;
-          resyncLog().then(function (n) { renderParent('シートに合わせました（記録 ' + n + '件）。', true); },
-            function (e) {
-              renderParent(e && e.message === 'outbox' ? 'まだ送れていない記録があるので、やめました。通信を確認して、もういちど押してください。' :
-                'つながりませんでした。通信を確認してください。');
-            });
+          reconcileLog(true).then(function (n) {
+            var left = load(KEYS.outbox, []).length;
+            renderParent('シートに合わせました（記録 ' + n + '件' + (left ? '、うち未送信 ' + left + '件' : '') + '）。', true);
+          }, function () { renderParent('つながりませんでした。通信を確認してください。'); });
         } else if (a === 'install' && installPrompt) {
           installPrompt.prompt();
           installPrompt = null;
@@ -575,7 +576,7 @@
 
   function connectAndGo(onFail) {
     api('ping').then(function () {
-      return Promise.all([refreshQuestions(), loadHistory()]);
+      return Promise.all([refreshQuestions(), loadHistory(true)]);
     }).then(function () {
       syncNow();
       renderHome();
@@ -603,7 +604,14 @@
     if (screen === 'home' || (screen === 'end' && hiddenDay !== today())) renderHome();
   });
 
+  // 新しい版が届いたら、ホームにいるときに読みこみなおす（問題の途中では待つ）
+  var reloadPending = false;
   if ('serviceWorker' in navigator) {
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; }
+      if (screen === 'home') location.reload(); else reloadPending = true;
+    });
     navigator.serviceWorker.register('sw.js').catch(function () { /* オフライン機能なしで動く */ });
   }
 
