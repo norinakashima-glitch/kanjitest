@@ -96,7 +96,7 @@ function kanjiOf_(word) {
   return (String(word).match(/[㐀-鿿々]/g) || []).join('');
 }
 
-/** SEED の1行：[語, 読み, 例文, 誤答1, 誤答2, 誤答3, 誤答の種類, ヒント, 教科, 出典] */
+/** SEED の1行：[語, 読み, 例文, 誤答1, 誤答2, 誤答3, 誤答の種類, ヒント, 教科, 出典, 別の例文1, 別の例文2, メモ]（後ろの3つはなくてもよい） */
 function importSeed_(seed) {
   var sh = book_().getSheetByName(SHEET_Q);
   var map = headerMap_(sh);
@@ -128,6 +128,9 @@ function importSeed_(seed) {
     set('誤答3', s[5]);
     set('誤答の種類', s[6]);
     set('ヒント', s[7]);
+    set('別の例文1', s[10] || '');
+    set('別の例文2', s[11] || '');
+    set('メモ', s[12] || '');
     set('字', kanjiOf_(s[0]));
     set('学年', grade_(s[0]));
     set('教科', s[8] || '');
