@@ -2,6 +2,7 @@
   'use strict';
 
   var L = window.KanjiLogic;
+  var S = window.KanjiSound;
   var KEYS = {
     config: 'kt_config',
     questions: 'kt_questions',
@@ -152,12 +153,21 @@
       '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
       '</div>' +
       action +
-      '<div class="foot"><button class="text-btn" data-act="parent">おうちのひと</button></div>' +
+      '<div class="foot">' +
+      '<button class="text-btn" data-act="sound" aria-pressed="' + S.enabled() + '">' + soundLabel() + '</button>' +
+      '<button class="text-btn" data-act="parent">おうちのひと</button>' +
+      '</div>' +
       '</section>';
     app.querySelectorAll('[data-act]').forEach(function (b) {
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-act');
-        if (a === 'start') startSession();
+        if (a === 'start') { S.unlock(); startSession(); }
+        else if (a === 'sound') {
+          S.setEnabled(!S.enabled());
+          b.setAttribute('aria-pressed', String(S.enabled()));
+          b.textContent = soundLabel();
+          if (S.enabled()) S.play('correct');
+        }
         else if (a === 'parent') renderParent();
         else if (a === 'retry') {
           b.disabled = true;
@@ -167,6 +177,8 @@
       });
     });
   }
+
+  function soundLabel() { return S.enabled() ? '🔊 おと オン' : '🔇 おと オフ'; }
 
   /* ---------- がめん：もんだい ---------- */
   var session = null;
@@ -269,6 +281,7 @@
     var ball = app.querySelector('.ball');
     if (ball) ball.style.left = ballLeft(session.idx, total);
 
+    S.play(ch.correct ? 'correct' : 'wrong');
     if (ch.correct) {
       app.querySelector('.praise').textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
       if (navigator.vibrate) { try { navigator.vibrate(25); } catch (e) { /* なにもしない */ } }
@@ -326,6 +339,7 @@
       '<button class="chunky go" data-act="home">おわる</button>' +
       '</section>';
     app.querySelector('[data-act="home"]').addEventListener('click', function () { renderHome(); });
+    S.play('goal');
   }
 
   /* ---------- がめん：おうちのひと ---------- */

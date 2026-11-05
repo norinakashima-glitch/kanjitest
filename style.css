@@ -250,7 +250,7 @@ mark.target {
 .start small { display: block; font-size: 1rem; font-weight: 500; opacity: .9; }
 .done-note { text-align: center; font-size: 1.35rem; font-weight: 700; margin: auto 0 6px; }
 .done-note span { display: block; font-size: 1.05rem; font-weight: 500; color: var(--ink-soft); margin-top: 4px; }
-.foot { display: flex; justify-content: center; margin-top: 18px; }
+.foot { display: flex; justify-content: center; gap: 18px; margin-top: 18px; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 10px; background: var(--note-bg); font-size: .95rem; }
 
 /* ---------- ゴール ---------- */
