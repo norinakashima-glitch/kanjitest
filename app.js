@@ -176,7 +176,7 @@
     } else if (isDemoDevice()) {
       action = '<button class="chunky go start" data-act="start">おためしスタート<small>きょうの 30もん</small></button>';
     } else {
-      // 毎日の目標は1回。2〜5回目は、やりたいときのおまけ
+      // 毎日の目標は1回。2〜15回目は、やりたいときのおまけ
       var s = load(KEYS.session, null);
       var resume = s && s.date === t && s.idx > 0 && s.idx < s.items.length;
       var games = L.gamesOn(load(KEYS.log, []), t);

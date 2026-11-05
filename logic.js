@@ -16,8 +16,8 @@
   // 1回の配分：期限が来た復習 最大15、前に正解した語 5、残りを新しい語
   var MAX_REVIEW = 15;
   var KNOWN = 5;
-  // 1日にできる回数。毎日の目標は1回で、2〜5回目はおまけ
-  var MAX_GAMES = 5;
+  // 1日にできる回数。毎日の目標は1回で、2〜15回目はおまけ
+  var MAX_GAMES = 15;
   var TYPE_READING = '読み';
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }

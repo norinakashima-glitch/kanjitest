@@ -1,5 +1,5 @@
 /* オフラインでも開けるようにする。更新したら VERSION を上げる */
-var VERSION = 'v8';
+var VERSION = 'v9';
 var SHELL = 'shell-' + VERSION;
 var FONTS = 'fonts-v1';
 var FILES = [
