@@ -123,6 +123,21 @@
     }).catch(function () { return false; });
   }
 
+  // この端末の記録を、シートの「結果」と同じにする（シートで記録を消したときに使う）
+  // 送れていない記録が残っているときは、なくさないように中止する
+  function resyncLog() {
+    return syncNow().then(function () {
+      if (load(KEYS.outbox, []).length) throw new Error('outbox');
+      return api('history', {}, 25000);
+    }).then(function (d) {
+      var rows = d.rows || [];
+      save(KEYS.log, rows);
+      var s = load(KEYS.session, null);
+      if (s && !rows.some(function (r) { return r.sid === s.sid; })) save(KEYS.session, null);
+      return rows.length;
+    });
+  }
+
   function demoBanner(canStop) {
     return '<div class="demo-banner" role="note"><span>おためし中：きろくしません</span>' +
       (canStop ? '<button class="text-btn" data-act="stop-demo">やめる</button>' : '') + '</div>';
@@ -464,6 +479,7 @@
       (isDemoDevice() ? '' : '<button class="chunky" data-act="demo">おためしで やってみる（記録しない）</button>') +
       '<button class="chunky" data-act="sync">記録をいま送る</button>' +
       '<button class="chunky" data-act="reload">問題を読みなおす</button>' +
+      '<button class="chunky" data-act="resync">記録をシートに合わせる</button>' +
       (installPrompt ? '<button class="chunky" data-act="install">ホーム画面に追加</button>' : '') +
       '<button class="chunky" data-act="setup">接続先を設定しなおす</button>' +
       '<button class="chunky" data-act="demo-device">' + (isDemoDevice() ? 'おためし専用をやめる' : 'この端末をおためし専用にする') + '</button>' +
@@ -497,6 +513,14 @@
           b.disabled = true;
           refreshQuestions().then(function (items) { renderParent(items.length + '問を読みこみました。', true); },
             function (e) { renderParent('読みこめませんでした：' + e.message); });
+        } else if (a === 'resync') {
+          if (!confirm('この端末の記録を、スプレッドシートの「結果」と同じにします。シートで消した記録は、この端末からも消えます。')) return;
+          b.disabled = true;
+          resyncLog().then(function (n) { renderParent('シートに合わせました（記録 ' + n + '件）。', true); },
+            function (e) {
+              renderParent(e && e.message === 'outbox' ? 'まだ送れていない記録があるので、やめました。通信を確認して、もういちど押してください。' :
+                'つながりませんでした。通信を確認してください。');
+            });
         } else if (a === 'install' && installPrompt) {
           installPrompt.prompt();
           installPrompt = null;
