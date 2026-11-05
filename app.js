@@ -1,0 +1,467 @@
+(function () {
+  'use strict';
+
+  var L = window.KanjiLogic;
+  var KEYS = {
+    config: 'kt_config',
+    questions: 'kt_questions',
+    log: 'kt_log',
+    outbox: 'kt_outbox',
+    session: 'kt_session'
+  };
+  var PRAISE = ['せいかい！', 'いいね！', 'ナイス！', 'そのとおり！', 'やったね！'];
+  var app = document.getElementById('app');
+  var screen = '';
+  var installPrompt = null;
+  var esc = L.escapeHtml;
+
+  /* ---------- ほぞん ---------- */
+  function load(k, fallback) {
+    try {
+      var v = localStorage.getItem(k);
+      return v ? JSON.parse(v) : fallback;
+    } catch (e) { return fallback; }
+  }
+  function save(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; }
+  }
+  function today() { return L.localDate(new Date()); }
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+  function getConfig() {
+    var c = load(KEYS.config, null);
+    return c && c.url && c.key ? c : null;
+  }
+
+  // せっていリンク（#u=...&k=...）で開いたときに保存する。# 以降はサーバーに送られない
+  function readHashConfig() {
+    var h = location.hash.slice(1);
+    if (!h) return false;
+    var p = new URLSearchParams(h);
+    var u = p.get('u'), k = p.get('k');
+    history.replaceState(null, '', location.pathname + location.search);
+    if (u && k) { save(KEYS.config, { url: u, key: k }); return true; }
+    return false;
+  }
+
+  /* ---------- つうしん ---------- */
+  function api(action, extra, timeoutMs) {
+    var cfg = getConfig();
+    if (!cfg) return Promise.reject(new Error('no-config'));
+    var body = Object.assign({ key: cfg.key, action: action }, extra || {});
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || 12000);
+    // 文字列を送ると text/plain になり、Apps Script でも事前確認なしで通る
+    return fetch(cfg.url, { method: 'POST', body: JSON.stringify(body), signal: ctrl.signal, redirect: 'follow' })
+      .then(function (res) { return res.json(); })
+      .then(function (d) {
+        clearTimeout(timer);
+        if (!d || !d.ok) throw new Error((d && d.error) || 'error');
+        return d;
+      }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  function questions() {
+    var c = load(KEYS.questions, null);
+    return c && c.items ? c.items : [];
+  }
+  function refreshQuestions() {
+    return api('questions').then(function (d) {
+      save(KEYS.questions, { at: new Date().toISOString(), items: d.items || [] });
+      return d.items || [];
+    });
+  }
+
+  var syncing = null;
+  function syncNow() {
+    if (syncing) return syncing;
+    if (!getConfig() || navigator.onLine === false) return Promise.resolve(false);
+    var box = load(KEYS.outbox, []);
+    if (!box.length) return Promise.resolve(true);
+    var batch = box.slice(0, 200);
+    syncing = api('log', { rows: batch }, 25000).then(function (d) {
+      var ok = {};
+      (d.ids || []).forEach(function (id) { ok[id] = true; });
+      var rest = load(KEYS.outbox, []).filter(function (r) { return !ok[r.id]; });
+      save(KEYS.outbox, rest);
+      syncing = null;
+      if (rest.length && batch.length === 200) return syncNow();
+      return true;
+    }).catch(function () { syncing = null; return false; });
+    return syncing;
+  }
+
+  // 端末の記録が空なら（機種変更やデータ消去のあと）、シートの記録から戻す
+  function restoreIfEmpty() {
+    if (load(KEYS.log, []).length) return Promise.resolve(false);
+    return api('history', {}, 25000).then(function (d) {
+      if (d.rows && d.rows.length && !load(KEYS.log, []).length) {
+        save(KEYS.log, d.rows);
+        return true;
+      }
+      return false;
+    }).catch(function () { return false; });
+  }
+
+  function addRecord(rec) {
+    var log = load(KEYS.log, []);
+    log.push(rec);
+    save(KEYS.log, log);
+    var box = load(KEYS.outbox, []);
+    box.push(rec);
+    save(KEYS.outbox, box);
+  }
+
+  /* ---------- がめん：ホーム ---------- */
+  function renderHome(notice) {
+    screen = 'home';
+    var t = today();
+    var stats = L.dayStats(load(KEYS.log, []), t);
+    var stamps = '';
+    for (var i = 13; i >= 0; i--) {
+      var d = L.addDays(t, -i);
+      var done = stats.days[d];
+      var cls = 'stamp' + (done ? ' is-done' : '') + (i === 0 ? ' is-today' : '');
+      var label = done ? '⚽' : String(Number(d.slice(8)));
+      stamps += '<li class="' + cls + '" aria-label="' + esc(d) + (done ? ' できた' : '') + '">' + label + '</li>';
+    }
+    var hasQ = questions().length > 0;
+    var action;
+    if (!hasQ) {
+      action = '<p class="notice">もんだいを まだ よみこめていません。インターネットに つないで、もういちど ひらいてね。</p>' +
+        '<button class="chunky go start" data-act="retry">よみこむ</button>';
+    } else if (stats.doneToday) {
+      action = '<p class="done-note">きょうの ぶんは おわり！<span>また あした やろうね</span></p>' +
+        '<div class="foot"><button class="text-btn" data-act="start">もう1かい やる</button></div>';
+    } else {
+      var s = load(KEYS.session, null);
+      var resume = s && s.date === t && s.idx > 0 && s.idx < s.items.length;
+      action = '<button class="chunky go start" data-act="start">' +
+        (resume ? 'つづきから<small>' + (s.idx + 1) + 'もんめから</small>' : 'スタート<small>30もん</small>') +
+        '</button>';
+    }
+    app.innerHTML =
+      '<section class="home">' +
+      '<h1 class="title">よみの れんしゅう<small>かんじを よんでみよう</small></h1>' +
+      (notice ? '<p class="notice">' + esc(notice) + '</p>' : '') +
+      '<ol class="stamps" aria-label="さいきんの 14にち">' + stamps + '</ol>' +
+      '<div class="stats">' +
+      '<div class="stat"><span>れんぞく</span><b>' + stats.streak + '</b><i>にち</i></div>' +
+      '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
+      '</div>' +
+      action +
+      '<div class="foot"><button class="text-btn" data-act="parent">おうちのひと</button></div>' +
+      '</section>';
+    app.querySelectorAll('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-act');
+        if (a === 'start') startSession();
+        else if (a === 'parent') renderParent();
+        else if (a === 'retry') {
+          b.disabled = true;
+          refreshQuestions().then(function () { renderHome(); },
+            function () { renderHome('まだ つながりません。インターネットを たしかめてね。'); });
+        }
+      });
+    });
+  }
+
+  /* ---------- がめん：もんだい ---------- */
+  var session = null;
+  var shownAt = 0, hiddenAt = 0, answered = false, hintUsed = false;
+
+  function startSession() {
+    var t = today();
+    var s = load(KEYS.session, null);
+    if (s && s.date === t && s.idx < s.items.length) {
+      session = s;
+    } else {
+      var items = L.buildSession(questions(), load(KEYS.log, []), t);
+      if (!items.length) { renderHome('もんだいが ありません。おうちのひとに きいてね。'); return; }
+      session = { sid: uuid(), date: t, items: items, idx: 0, results: [] };
+      save(KEYS.session, session);
+    }
+    renderQuiz();
+  }
+
+  function ballLeft(done, total) {
+    return (4 + 86 * (total ? done / total : 0)).toFixed(1) + '%';
+  }
+
+  function renderQuiz() {
+    screen = 'quiz';
+    var it = session.items[session.idx];
+    var total = session.items.length;
+    answered = false;
+    hintUsed = false;
+    app.innerHTML =
+      '<section class="quiz">' +
+      '<div class="topbar">' +
+      '<div class="pitch" role="progressbar" aria-valuemin="0" aria-valuemax="' + total + '" aria-valuenow="' + session.idx + '">' +
+      '<span class="goal"></span><span class="ball" style="left:' + ballLeft(session.idx, total) + '">⚽</span></div>' +
+      '<span class="count">' + (session.idx + 1) + ' / ' + total + '</span>' +
+      '</div>' +
+      (it.source === '日記' ? '<p class="badge">きみの日記から</p>' : '') +
+      '<p class="sentence">' + L.sentenceHtml(it.sentence, it.word) + '</p>' +
+      '<div class="hint-row">' + (it.hint ? '<button class="text-btn" data-act="hint">ヒントを みる</button>' : '') + '</div>' +
+      '<div class="choices">' +
+      it.choices.map(function (c, i) {
+        return '<button class="chunky choice" data-i="' + i + '">' + esc(c.text) + '</button>';
+      }).join('') +
+      '</div>' +
+      '<p class="praise" aria-live="polite"></p>' +
+      '<div class="after"></div>' +
+      '</section>';
+    var hb = app.querySelector('[data-act="hint"]');
+    if (hb) hb.addEventListener('click', function () {
+      hintUsed = true;
+      hb.parentNode.innerHTML = '<p class="hint">💡 ' + esc(it.hint) + '</p>';
+    });
+    app.querySelectorAll('.choice').forEach(function (b) {
+      b.addEventListener('click', function () { answer(Number(b.getAttribute('data-i'))); });
+    });
+    shownAt = performance.now();
+    hiddenAt = 0;
+  }
+
+  function answer(i) {
+    if (answered) return;
+    answered = true;
+    var ms = Math.max(0, Math.round(performance.now() - shownAt));
+    var it = session.items[session.idx];
+    var ch = it.choices[i];
+    var btns = app.querySelectorAll('.choice');
+    btns.forEach(function (b, j) {
+      b.disabled = true;
+      if (it.choices[j].correct) b.classList.add('is-correct');
+      else if (j === i) b.classList.add('is-picked');
+      else b.classList.add('is-dim');
+    });
+    var total = session.items.length;
+    var rec = {
+      id: uuid(),
+      ts: new Date().toISOString(),
+      date: session.date,
+      sid: session.sid,
+      qno: session.idx + 1,
+      qtotal: total,
+      qid: it.qid,
+      word: it.word,
+      kanji: L.kanjiOf(it.word).join(''),
+      type: it.type,
+      correct: !!ch.correct,
+      chosen: ch.text,
+      chosenType: ch.type || '',
+      reading: it.reading,
+      ms: ms,
+      hint: hintUsed,
+      reason: it.reason,
+      source: it.source || ''
+    };
+    addRecord(rec);
+    session.results.push({ reason: it.reason, correct: rec.correct });
+    session.idx++;
+    save(KEYS.session, session);
+    syncNow();
+
+    var ball = app.querySelector('.ball');
+    if (ball) ball.style.left = ballLeft(session.idx, total);
+
+    if (ch.correct) {
+      app.querySelector('.praise').textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+      if (navigator.vibrate) { try { navigator.vibrate(25); } catch (e) { /* なにもしない */ } }
+      setTimeout(next, 850);
+    } else {
+      var after = app.querySelector('.after');
+      after.innerHTML =
+        '<div class="feedback" role="status">' +
+        '<p class="answer">' + esc(it.word) + ' は「<strong>' + esc(it.reading) + '</strong>」</p>' +
+        '<p class="again">また でてくるね。</p>' +
+        (it.hint && !hintUsed ? '<p class="meaning">💡 ' + esc(it.hint) + '</p>' : '') +
+        '</div>' +
+        '<button class="chunky go next">つぎへ</button>';
+      var nb = after.querySelector('.next');
+      nb.addEventListener('click', next);
+      nb.focus({ preventScroll: true });
+      after.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }
+
+  function next() {
+    if (screen !== 'quiz') return;
+    if (session.idx >= session.items.length) finish();
+    else renderQuiz();
+  }
+
+  function finish() {
+    var res = session.results;
+    var fresh = res.filter(function (r) { return r.reason === '新規' && r.correct; }).length;
+    var review = res.filter(function (r) { return (r.reason === '復習' || r.reason === '確認') && r.correct; }).length;
+    var total = session.items.length;
+    save(KEYS.session, null);
+    session = null;
+    syncNow();
+    renderEnd(total, fresh, review);
+  }
+
+  /* ---------- がめん：ゴール ---------- */
+  function renderEnd(total, fresh, review) {
+    screen = 'end';
+    var stats = L.dayStats(load(KEYS.log, []), today());
+    app.innerHTML =
+      '<section class="end">' +
+      '<div class="end-pitch" aria-hidden="true"><span class="goal"></span><span class="ball">⚽</span></div>' +
+      '<p class="goal-word">ゴール！</p>' +
+      '<p class="end-sub">' + total + 'もん おわったよ</p>' +
+      '<div class="stats">' +
+      '<div class="stat"><span>れんぞく</span><b>' + stats.streak + '</b><i>にち</i></div>' +
+      '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
+      '</div>' +
+      '<ul class="end-list">' +
+      (fresh ? '<li>はじめての ことば　' + fresh + 'こ せいかい</li>' : '') +
+      (review ? '<li>ふくしゅう　' + review + 'こ できた</li>' : '') +
+      '</ul>' +
+      '<button class="chunky go" data-act="home">おわる</button>' +
+      '</section>';
+    app.querySelector('[data-act="home"]').addEventListener('click', function () { renderHome(); });
+  }
+
+  /* ---------- がめん：おうちのひと ---------- */
+  function renderParent(msg, good) {
+    screen = 'parent';
+    var cfg = getConfig();
+    var qc = load(KEYS.questions, null);
+    var log = load(KEYS.log, []);
+    var box = load(KEYS.outbox, []);
+    app.innerHTML =
+      '<section class="panel">' +
+      '<h1>おうちのひと</h1>' +
+      '<dl>' +
+      '<dt>接続</dt><dd>' + (cfg ? '設定済み' : '未設定') + '</dd>' +
+      '<dt>問題</dt><dd>' + (qc ? qc.items.length + '問（' + esc(new Date(qc.at).toLocaleString('ja-JP')) + ' に取得）' : 'まだ取得していません') + '</dd>' +
+      '<dt>記録</dt><dd>' + log.length + '件</dd>' +
+      '<dt>未送信</dt><dd>' + box.length + '件</dd>' +
+      '</dl>' +
+      '<p class="msg' + (msg ? (good ? ' good' : ' bad') : '') + '">' + esc(msg || '') + '</p>' +
+      '<button class="chunky" data-act="sync">記録をいま送る</button>' +
+      '<button class="chunky" data-act="reload">問題を読みなおす</button>' +
+      (installPrompt ? '<button class="chunky" data-act="install">ホーム画面に追加</button>' : '') +
+      '<button class="chunky" data-act="setup">接続先を設定しなおす</button>' +
+      '<button class="chunky go" data-act="back">もどる</button>' +
+      '</section>';
+    app.querySelectorAll('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-act');
+        if (a === 'back') renderHome();
+        else if (a === 'setup') renderSetup();
+        else if (a === 'sync') {
+          b.disabled = true;
+          syncNow().then(function (ok) {
+            var left = load(KEYS.outbox, []).length;
+            renderParent(ok && !left ? '送りました。' : '送れませんでした。通信を確認してください（未送信 ' + left + '件）。', ok && !left);
+          });
+        } else if (a === 'reload') {
+          b.disabled = true;
+          refreshQuestions().then(function (items) { renderParent(items.length + '問を読みこみました。', true); },
+            function (e) { renderParent('読みこめませんでした：' + e.message); });
+        } else if (a === 'install' && installPrompt) {
+          installPrompt.prompt();
+          installPrompt = null;
+        }
+      });
+    });
+  }
+
+  /* ---------- がめん：はじめのせってい ---------- */
+  function renderSetup(msg) {
+    screen = 'setup';
+    var cfg = getConfig() || { url: '', key: '' };
+    app.innerHTML =
+      '<section class="panel">' +
+      '<h1>はじめの設定（おうちのひと）</h1>' +
+      '<p>Apps Script の「ウェブアプリの URL」と「アクセスキー」を入れてください。パソコンで <b>setup.html</b> を開くと、QRコードを読むだけで設定できます。</p>' +
+      '<label for="f-url">ウェブアプリの URL</label>' +
+      '<input id="f-url" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(cfg.url) + '">' +
+      '<label for="f-key">アクセスキー</label>' +
+      '<input id="f-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="' + esc(cfg.key) + '">' +
+      '<p class="msg bad">' + esc(msg || '') + '</p>' +
+      '<button class="chunky go" data-act="save">保存してつなぐ</button>' +
+      (getConfig() ? '<button class="chunky" data-act="back">もどる</button>' : '') +
+      '</section>';
+    var back = app.querySelector('[data-act="back"]');
+    if (back) back.addEventListener('click', function () { renderParent(); });
+    app.querySelector('[data-act="save"]').addEventListener('click', function (ev) {
+      var url = app.querySelector('#f-url').value.trim();
+      var key = app.querySelector('#f-key').value.trim();
+      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) {
+        renderSetup('URL は https://script.google.com/ で始まるものを入れてください。');
+        return;
+      }
+      if (!key) { renderSetup('アクセスキーを入れてください。'); return; }
+      ev.target.disabled = true;
+      save(KEYS.config, { url: url, key: key });
+      connectAndGo(function (m) { renderSetup(m); });
+    });
+  }
+
+  function connectAndGo(onFail) {
+    api('ping').then(function () {
+      return Promise.all([refreshQuestions(), restoreIfEmpty()]);
+    }).then(function () {
+      syncNow();
+      renderHome();
+    }).catch(function (e) {
+      var m = e && e.message === 'bad-key' ? 'アクセスキーがちがいます。' :
+        'つながりませんでした（' + (e && e.message ? e.message : 'error') + '）。URL と公開の設定を確認してください。';
+      onFail(m);
+    });
+  }
+
+  /* ---------- はじまり ---------- */
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installPrompt = e; });
+  window.addEventListener('online', function () { syncNow(); });
+  var hiddenDay = null;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      hiddenAt = performance.now();
+      hiddenDay = today();
+      return;
+    }
+    // 問題の途中で画面を離れていたら、そのあいだは回答時間に入れない
+    if (screen === 'quiz' && !answered && hiddenAt) shownAt += performance.now() - hiddenAt;
+    hiddenAt = 0;
+    syncNow();
+    if (screen === 'home' || (screen === 'end' && hiddenDay !== today())) renderHome();
+  });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* オフライン機能なしで動く */ });
+  }
+
+  // すでに開いているページで せっていリンクを開いたとき
+  window.addEventListener('hashchange', function () {
+    if (readHashConfig()) {
+      app.innerHTML = '<section class="panel"><h1>せつぞく ちゅう…</h1></section>';
+      connectAndGo(function (m) { renderSetup(m); });
+    }
+  });
+
+  var fromLink = readHashConfig();
+  if (!getConfig()) {
+    renderSetup();
+  } else if (fromLink) {
+    app.innerHTML = '<section class="panel"><h1>せつぞく ちゅう…</h1></section>';
+    connectAndGo(function (m) { renderSetup(m); });
+  } else {
+    renderHome();
+    Promise.all([
+      refreshQuestions().catch(function () { return null; }),
+      restoreIfEmpty()
+    ]).then(function () {
+      if (screen === 'home') renderHome();
+      syncNow();
+    });
+  }
+})();

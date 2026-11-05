@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>端末の設定</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .qr { margin: 18px 0 8px; padding: 16px; background: #fff; border: 3px solid var(--edge); border-radius: 16px; display: grid; place-items: center; }
+    .qr svg { width: 100%; max-width: 320px; height: auto; }
+    .link { word-break: break-all; font-size: .85rem; color: var(--ink-soft); }
+    ol { padding-left: 1.3em; }
+  </style>
+</head>
+<body>
+  <main id="app" class="panel">
+    <h1>子どもの端末を設定する</h1>
+    <ol>
+      <li>Apps Script の「ウェブアプリの URL」と「アクセスキー」を下に入れます。</li>
+      <li>「接続をためす」で、つながるか確認します。</li>
+      <li>子どものスマホのカメラで QR コードを読み、開いたページを「ホーム画面に追加」します。</li>
+    </ol>
+    <p>入れた内容はこのページの中だけで使い、どこにも送りません（接続テストを除く）。</p>
+    <label for="url">ウェブアプリの URL</label>
+    <input id="url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
+    <label for="key">アクセスキー</label>
+    <input id="key" type="text" autocomplete="off" spellcheck="false">
+    <button class="chunky" id="test">接続をためす</button>
+    <p class="msg" id="msg"></p>
+    <div id="out" hidden>
+      <div class="qr" id="qr"></div>
+      <p class="link" id="link"></p>
+      <button class="chunky" id="copy">リンクをコピー</button>
+    </div>
+  </main>
+  <script src="vendor/qrcode.js"></script>
+  <script>
+    (function () {
+      var $ = function (id) { return document.getElementById(id); };
+      var base = location.origin + location.pathname.replace(/setup\.html$/, '');
+      function link() {
+        var u = $('url').value.trim(), k = $('key').value.trim();
+        if (!u || !k) return '';
+        return base + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k);
+      }
+      function draw() {
+        var l = link();
+        $('out').hidden = !l;
+        if (!l) return;
+        var q = qrcode(0, 'M');
+        q.addData(l);
+        q.make();
+        $('qr').innerHTML = q.createSvgTag(6, 2);
+        $('link').textContent = l;
+      }
+      function say(t, good) { $('msg').textContent = t; $('msg').className = 'msg ' + (good ? 'good' : 'bad'); }
+      $('url').addEventListener('input', draw);
+      $('key').addEventListener('input', draw);
+      $('test').addEventListener('click', function () {
+        var u = $('url').value.trim(), k = $('key').value.trim();
+        if (!/^https:\/\/script\.google\.com\//.test(u)) { say('URL は https://script.google.com/ で始まるものを入れてください。'); return; }
+        say('確認中…', true);
+        fetch(u, { method: 'POST', body: JSON.stringify({ key: k, action: 'ping' }) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.ok) say('つながりました。問題は ' + d.questions + ' 問あります。', true);
+            else say(d.error === 'bad-key' ? 'アクセスキーがちがいます。' : 'エラー：' + d.error);
+          })
+          .catch(function (e) { say('つながりませんでした。URL と「アクセスできるユーザー：全員」を確認してください。（' + e.message + '）'); });
+      });
+      $('copy').addEventListener('click', function () {
+        navigator.clipboard.writeText(link()).then(function () { say('コピーしました。', true); });
+      });
+    })();
+  </script>
+</body>
+</html>
