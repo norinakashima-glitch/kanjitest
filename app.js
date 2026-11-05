@@ -244,6 +244,18 @@
   /* ---------- がめん：もんだい ---------- */
   var session = null;
   var shownAt = 0, hiddenAt = 0, answered = false, hintUsed = false;
+  // 画面が出てから WAIT_MS のあいだのタップは受け付けない（前の画面で押した指がそのまま当たるのを防ぐ）
+  var WAIT_MS = 500;
+  var blockedTaps = 0;
+  function holdTaps(box) {
+    var until = performance.now() + WAIT_MS;
+    box.classList.add('is-wait');
+    setTimeout(function () { box.classList.remove('is-wait'); }, WAIT_MS);
+    return function () {
+      if (performance.now() < until) { blockedTaps++; return false; }
+      return true;
+    };
+  }
 
   function startSession() {
     if (isDemoDevice()) { startDemo(false); return; }
@@ -315,8 +327,10 @@
       hintUsed = true;
       hb.parentNode.innerHTML = '<p class="hint">💡 ' + esc(it.hint) + '</p>';
     });
+    blockedTaps = 0;
+    var ready = holdTaps(app.querySelector('.choices'));
     app.querySelectorAll('.choice').forEach(function (b) {
-      b.addEventListener('click', function () { answer(Number(b.getAttribute('data-i'))); });
+      b.addEventListener('click', function () { if (ready()) answer(Number(b.getAttribute('data-i'))); });
     });
     shownAt = performance.now();
     hiddenAt = 0;
@@ -356,7 +370,9 @@
       reason: it.reason,
       source: it.source || '',
       variant: it.variant || '例文',
-      slen: L.sentenceLength(it.sentence)
+      slen: L.sentenceLength(it.sentence),
+      pos: i + 1,               // 押したボタンの位置（上から 1〜4）
+      blocked: blockedTaps      // 早すぎて受け付けなかったタップの数
     };
     session.results.push({ reason: it.reason, correct: rec.correct });
     session.idx++;
@@ -395,7 +411,8 @@
         '</div>' +
         '<button class="chunky go next">つぎへ</button>';
       var nb = after.querySelector('.next');
-      nb.addEventListener('click', next);
+      var nextReady = holdTaps(after);
+      nb.addEventListener('click', function () { if (nextReady()) next(); });
       nb.focus({ preventScroll: true });
       after.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }

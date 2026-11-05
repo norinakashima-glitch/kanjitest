@@ -197,6 +197,9 @@ mark.target {
   color: var(--ink-soft);
 }
 .choice.is-dim { opacity: .45; }
+/* 出てすぐの0.5秒は押せない。うすく見せて、押せるようになったら はっきりさせる */
+.choices .choice, .after .next { transition: opacity .15s ease, transform .08s ease, box-shadow .08s ease, background-color .15s ease; }
+.choices.is-wait .choice, .after.is-wait .next { opacity: .6; }
 .praise {
   min-height: 1.6em;
   margin: 8px 0 0;

@@ -17,7 +17,7 @@ var Q_HEADERS = ['ID', '種類', '語', '読み', '例文', '誤答1', '誤答2'
   '別の例文1', '別の例文2', '字', '学年', '教科', '出典', '有効', '追加日', 'メモ'];
 var R_HEADERS = ['記録ID', '日時', '日付', 'セッション', '何問目', '全問数', '問題ID', '語', '字', '問題の種類',
   '正誤', '選んだ選択肢', '誤答の種類', '正しい読み', '回答時間(秒)', 'ヒント', '出題区分', '出典',
-  '出した例文', '例文の字数'];
+  '出した例文', '例文の字数', '押した位置', '早すぎたタップ'];
 var T_HEADERS = ['日付', '教科', '単元', '問題番号', '答え方の形式', '結果', 'ミスの種類', '正しい答え',
   '書いた答え', 'メモ', '問題データに追加'];
 
@@ -282,6 +282,8 @@ function writeResults_(rows) {
       set('出典', String(x.source || ''));
       set('出した例文', String(x.variant || ''));
       set('例文の字数', Number(x.slen) || '');
+      set('押した位置', Number(x.pos) || '');
+      set('早すぎたタップ', x.blocked === undefined ? '' : Number(x.blocked) || 0);
       out.push(row);
     });
     if (out.length) sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);
