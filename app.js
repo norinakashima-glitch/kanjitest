@@ -173,15 +173,22 @@
         '<button class="chunky go start" data-act="retry">よみこむ</button>';
     } else if (isDemoDevice()) {
       action = '<button class="chunky go start" data-act="start">おためしスタート<small>きょうの 30もん</small></button>';
-    } else if (stats.doneToday) {
-      action = '<p class="done-note">きょうの ぶんは おわり！<span>また あした やろうね</span></p>' +
-        '<div class="foot"><button class="text-btn" data-act="start">もう1かい やる</button></div>';
     } else {
+      // 毎日の目標は1回。2〜5回目は、やりたいときのおまけ
       var s = load(KEYS.session, null);
       var resume = s && s.date === t && s.idx > 0 && s.idx < s.items.length;
-      action = '<button class="chunky go start" data-act="start">' +
-        (resume ? 'つづきから<small>' + (s.idx + 1) + 'もんめから</small>' : 'スタート<small>30もん</small>') +
-        '</button>';
+      var games = L.gamesOn(load(KEYS.log, []), t);
+      if (resume) {
+        action = (games ? '<p class="done-note">きょう ' + games + 'かい やったよ</p>' : '') +
+          '<button class="chunky go start" data-act="start">つづきから<small>' + (s.idx + 1) + 'もんめから</small></button>';
+      } else if (games >= L.MAX_GAMES) {
+        action = '<p class="done-note">きょうは ' + games + 'かい やったね！<span>また あした やろうね</span></p>';
+      } else if (games > 0) {
+        action = '<p class="done-note">きょうの ぶんは クリア！<span>もっと やるなら、あと ' + (L.MAX_GAMES - games) + 'かい できるよ</span></p>' +
+          '<button class="chunky start more" data-act="start">もう1かい<small>きょう ' + (games + 1) + 'かいめ</small></button>';
+      } else {
+        action = '<button class="chunky go start" data-act="start">スタート<small>30もん</small></button>';
+      }
     }
     app.innerHTML =
       '<section class="home">' +
@@ -243,6 +250,7 @@
     if (s && s.date === t && s.idx < s.items.length) {
       session = s;
     } else {
+      if (L.gamesOn(load(KEYS.log, []), t) >= L.MAX_GAMES) { renderHome(); return; }
       var items = L.buildSession(questions(), load(KEYS.log, []), t);
       if (!items.length) { renderHome('もんだいが ありません。おうちのひとに きいてね。'); return; }
       session = { sid: uuid(), date: t, items: items, idx: 0, results: [] };
@@ -400,7 +408,9 @@
   function finish() {
     var res = session.results;
     var fresh = res.filter(function (r) { return r.reason === '新規' && r.correct; }).length;
-    var review = res.filter(function (r) { return (r.reason === '復習' || r.reason === '確認') && r.correct; }).length;
+    var review = res.filter(function (r) {
+      return (r.reason === '復習' || r.reason === '確認' || r.reason === 'やりなおし') && r.correct;
+    }).length;
     var total = session.items.length;
     var right = res.filter(function (r) { return r.correct; }).length;
     var score = L.finishTier(L.lastSession(load(KEYS.log, []), session.sid), right, total);
@@ -420,6 +430,7 @@
   function renderEnd(total, fresh, review, demo, score) {
     screen = 'end';
     var stats = L.dayStats(load(KEYS.log, []), today());
+    var gameNo = demo ? 0 : L.gamesOn(load(KEYS.log, []), today());
     var bars = '';
     for (var i = 0; i < 12; i++) bars += '<i style="--h:' + (0.3 + ((i * 37) % 70) / 100).toFixed(2) + '"></i>';
     // 前回より下がったときは、前回の数字を出さない
@@ -442,6 +453,7 @@
       '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
       '</div>') +
       '<ul class="end-list">' +
+      (gameNo >= 2 ? '<li>きょう ' + gameNo + 'かいめ' + (gameNo >= L.MAX_GAMES ? '。きょうは ここまで！' : '') + '</li>' : '') +
       (fresh ? '<li>はじめての ことば　' + fresh + 'こ せいかい</li>' : '') +
       (review ? '<li>ふくしゅう　' + review + 'こ できた</li>' : '') +
       '</ul>' +

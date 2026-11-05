@@ -256,6 +256,8 @@ mark.target {
 .start { min-height: 92px; font-size: 2rem; margin-top: auto; }
 .start small { display: block; font-size: 1rem; font-weight: 500; opacity: .9; }
 .done-note { text-align: center; font-size: 1.35rem; font-weight: 700; margin: auto 0 6px; }
+.start.more { margin-top: 14px; min-height: 76px; font-size: 1.6rem; font-weight: 700; }
+.start.more small { color: var(--ink-soft); }
 .done-note span { display: block; font-size: 1.05rem; font-weight: 500; color: var(--ink-soft); margin-top: 4px; }
 .foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 18px; }
 .demo-banner {

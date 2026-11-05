@@ -16,6 +16,8 @@
   // 1回の配分：期限が来た復習 最大15、前に正解した語 5、残りを新しい語
   var MAX_REVIEW = 15;
   var KNOWN = 5;
+  // 1日にできる回数。毎日の目標は1回で、2〜5回目はおまけ
+  var MAX_GAMES = 5;
   var TYPE_READING = '読み';
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -155,11 +157,13 @@
     var rank = {};
     g.order.forEach(function (k, i) { rank[k] = i; });
 
-    var due = [], known = [], fresh = [];
+    // retry：今日まちがえて、まだ今日のうちに正解していない語（2回目以降で先に出す）
+    var retry = [], due = [], known = [], fresh = [];
     g.order.forEach(function (k) {
       var s = st[k];
       if (!s) { fresh.push(k); return; }
-      if ((s.status === 'learning' || s.status === 'check') && s.due <= today) due.push(k);
+      if (s.status === 'learning' && s.last === today && !s.lastCorrect) retry.push(k);
+      else if ((s.status === 'learning' || s.status === 'check') && s.due <= today) due.push(k);
       else if (s.status === 'done' || s.status === 'check' ||
                (s.status === 'learning' && s.lastCorrect)) known.push(k);
     });
@@ -171,6 +175,7 @@
       if (A.due !== B.due) return A.due < B.due ? -1 : 1;
       return B.wrong - A.wrong;
     });
+    retry.sort(function (a, b) { return (st[b].wrong - st[a].wrong) || (rank[a] - rank[b]); });
     fresh.sort(function (a, b) {
       var da = g.groups[a].some(function (q) { return q.source === '日記'; }) ? 0 : 1;
       var db = g.groups[b].some(function (q) { return q.source === '日記'; }) ? 0 : 1;
@@ -181,6 +186,7 @@
     });
 
     var N = SESSION_SIZE;
+    due = retry.concat(due);
     var rev = due.slice(0, MAX_REVIEW);
     var kn = known.slice(0, KNOWN);
     var nw = fresh.slice(0, Math.max(0, N - rev.length - kn.length));
@@ -191,7 +197,10 @@
     while (rev.length + kn.length + nw.length < N && extraKnown.length) kn.push(extraKnown.shift());
 
     var picks = [];
-    rev.forEach(function (k) { picks.push({ k: k, reason: st[k].status === 'check' ? '確認' : '復習' }); });
+    rev.forEach(function (k) {
+      var reason = retry.indexOf(k) >= 0 ? 'やりなおし' : st[k].status === 'check' ? '確認' : '復習';
+      picks.push({ k: k, reason: reason });
+    });
     kn.forEach(function (k) { picks.push({ k: k, reason: '正解済み' }); });
     nw.forEach(function (k) { picks.push({ k: k, reason: '新規' }); });
 
@@ -222,6 +231,15 @@
     var d = done[today] ? today : addDays(today, -1);
     while (done[d]) { streak++; d = addDays(d, -1); }
     return { streak: streak, total: Object.keys(done).length, doneToday: !!done[today], days: done };
+  }
+
+  /* その日に最後までやった回数 */
+  function gamesOn(log, date) {
+    var sids = {};
+    log.forEach(function (r) {
+      if (r.date === date && r.qno && r.qtotal && Number(r.qno) === Number(r.qtotal)) sids[r.sid || r.id || r.ts] = true;
+    });
+    return Object.keys(sids).length;
   }
 
   function percent(c, t) { return t ? Math.round(c * 100 / t) : 0; }
@@ -286,7 +304,7 @@
 
   return {
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
-    MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN,
+    MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
     percent: percent, lastSession: lastSession, finishTier: finishTier,
