@@ -3,6 +3,7 @@
 
   var L = window.KanjiLogic;
   var S = window.KanjiSound;
+  var FX = window.KanjiFx;
   var KEYS = {
     config: 'kt_config',
     questions: 'kt_questions',
@@ -139,6 +140,7 @@
   /* ---------- がめん：ホーム ---------- */
   function renderHome(notice) {
     screen = 'home';
+    FX.clear();
     var t = today();
     var stats = L.dayStats(load(KEYS.log, []), t);
     var stamps = '';
@@ -179,6 +181,7 @@
       action +
       '<div class="foot">' +
       '<button class="text-btn" data-act="sound" aria-pressed="' + S.enabled() + '">' + soundLabel() + '</button>' +
+      '<button class="text-btn" data-act="fx" aria-pressed="' + FX.enabled() + '">' + fxLabel() + '</button>' +
       '<button class="text-btn" data-act="parent">おうちのひと</button>' +
       '</div>' +
       '</section>';
@@ -192,6 +195,15 @@
           b.textContent = soundLabel();
           if (S.enabled()) S.play('correct');
         }
+        else if (a === 'fx') {
+          FX.setEnabled(!FX.enabled());
+          b.setAttribute('aria-pressed', String(FX.enabled()));
+          b.textContent = fxLabel();
+          if (FX.active()) {
+            var r = b.getBoundingClientRect();
+            FX.burst(r.left + r.width / 2, r.top + r.height / 2, 12, 80, 600);
+          }
+        }
         else if (a === 'parent') renderParent();
         else if (a === 'retry') {
           b.disabled = true;
@@ -203,6 +215,7 @@
   }
 
   function soundLabel() { return S.enabled() ? '🔊 おと オン' : '🔇 おと オフ'; }
+  function fxLabel() { return FX.enabled() ? '✨ うごき オン' : '・ うごき オフ'; }
 
   /* ---------- がめん：もんだい ---------- */
   var session = null;
@@ -331,12 +344,23 @@
     var ball = app.querySelector('.ball');
     if (ball) ball.style.left = ballLeft(session.idx, total);
 
-    S.play(ch.correct ? 'correct' : 'wrong');
     if (ch.correct) {
-      app.querySelector('.praise').textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
-      if (navigator.vibrate) { try { navigator.vibrate(25); } catch (e) { /* なにもしない */ } }
+      // つづけて正解した数（間違えたら、なにも言わずに 0 にもどす）
+      var combo = 0;
+      for (var k = session.results.length - 1; k >= 0 && session.results[k].correct; k--) combo++;
+      var praise = app.querySelector('.praise');
+      var c = FX.callout(combo);
+      if (FX.correct({ button: btns[i], section: app.querySelector('.quiz'), combo: combo })) {
+        praise.innerHTML = '<span class="callout fx-lv' + c.level + '">' + esc(c.main) +
+          (c.sub ? '<small>' + esc(c.sub) + '</small>' : '') + '</span>';
+      } else {
+        praise.textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+      }
+      S.play(combo >= 3 ? 'combo' : 'correct');
+      if (navigator.vibrate) { try { navigator.vibrate(c.milestone ? [20, 60, 20] : 25); } catch (e) { /* なにもしない */ } }
       setTimeout(next, 850);
     } else {
+      S.play('wrong');
       var after = app.querySelector('.after');
       after.innerHTML =
         '<div class="feedback" role="status">' +
@@ -363,28 +387,40 @@
     var fresh = res.filter(function (r) { return r.reason === '新規' && r.correct; }).length;
     var review = res.filter(function (r) { return (r.reason === '復習' || r.reason === '確認') && r.correct; }).length;
     var total = session.items.length;
+    var right = res.filter(function (r) { return r.correct; }).length;
+    var score = L.finishTier(L.lastSession(load(KEYS.log, []), session.sid), right, total);
     if (session.demo) {
       var oneTime = session.oneTime;
       session = null;
-      renderEnd(total, fresh, review, { oneTime: oneTime });
+      renderEnd(total, fresh, review, { oneTime: oneTime }, score);
       return;
     }
     save(KEYS.session, null);
     session = null;
     syncNow();
-    renderEnd(total, fresh, review);
+    renderEnd(total, fresh, review, null, score);
   }
 
   /* ---------- がめん：ゴール ---------- */
-  function renderEnd(total, fresh, review, demo) {
+  function renderEnd(total, fresh, review, demo, score) {
     screen = 'end';
     var stats = L.dayStats(load(KEYS.log, []), today());
+    var bars = '';
+    for (var i = 0; i < 12; i++) bars += '<i style="--h:' + (0.3 + ((i * 37) % 70) / 100).toFixed(2) + '"></i>';
+    // 前回より下がったときは、前回の数字を出さない
+    var plus = score.up > 0 ? '<small>まえより +' + score.up + '%</small>' : '';
+    var badge = score.tier === 'perfect' ? '<p class="levelup is-perfect">PERFECT!' + (plus || '<small>ぜんもん せいかい</small>') + '</p>' :
+      score.tier === 'up' ? '<p class="levelup">LEVEL UP!' + plus + '</p>' : '';
     app.innerHTML =
-      '<section class="end">' +
+      '<section class="end tier-' + score.tier + '">' +
       (demo ? demoBanner(false) : '') +
-      '<div class="end-pitch" aria-hidden="true"><span class="goal"></span><span class="ball">⚽</span></div>' +
-      '<p class="goal-word">ゴール！</p>' +
-      '<p class="end-sub">' + total + 'もん おわったよ</p>' +
+      '<div class="stage" aria-hidden="true"><span class="beam l"></span><span class="beam r"></span>' +
+      '<span class="beam c"></span><div class="eq">' + bars + '</div></div>' +
+      '<p class="goal-word">FINISH!</p>' +
+      '<p class="end-sub">' + total + 'もん やりきった！</p>' +
+      '<div class="score-row">' +
+      '<p class="score"><span>せいかい</span><b>' + score.pct + '</b><i>%</i></p>' + badge +
+      '</div>' +
       (demo ? '<p class="notice">おためしなので、きろくは して いません。</p>' :
       '<div class="stats">' +
       '<div class="stat"><span>れんぞく</span><b>' + stats.streak + '</b><i>にち</i></div>' +
@@ -399,12 +435,17 @@
     app.querySelector('[data-act="home"]').addEventListener('click', function () {
       if (demo && demo.oneTime) renderParent(); else renderHome();
     });
+    FX.finish({ section: app.querySelector('.end'), pct: score.pct, tier: score.tier });
     S.play('goal');
+    if (score.tier !== 'base') {
+      setTimeout(function () { if (screen === 'end') S.play('levelup'); }, 650);
+    }
   }
 
   /* ---------- がめん：おうちのひと ---------- */
   function renderParent(msg, good) {
     screen = 'parent';
+    FX.clear();
     var cfg = getConfig();
     var qc = load(KEYS.questions, null);
     var log = load(KEYS.log, []);

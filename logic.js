@@ -224,6 +224,37 @@
     return { streak: streak, total: Object.keys(done).length, doneToday: !!done[today], days: done };
   }
 
+  function percent(c, t) { return t ? Math.round(c * 100 / t) : 0; }
+
+  /* いちばん最近、最後までやった回（今の回はのぞく）。同じ問題の記録が2つあっても1つと数える */
+  function lastSession(log, excludeSid) {
+    var by = {};
+    log.forEach(function (r) {
+      if (!r.sid || r.sid === excludeSid) return;
+      var s = by[r.sid] || (by[r.sid] = { sid: r.sid, q: {}, total: 0, done: false, ts: '', date: r.date });
+      if (r.qno) s.q[r.qno] = !!r.correct;
+      if (r.qno && r.qtotal && Number(r.qno) === Number(r.qtotal)) { s.done = true; s.total = Number(r.qtotal); }
+      if (String(r.ts || '') > s.ts) { s.ts = String(r.ts || ''); s.date = r.date; }
+    });
+    var best = null;
+    Object.keys(by).forEach(function (k) {
+      var s = by[k];
+      if (s.done && (!best || s.ts > best.ts)) best = s;
+    });
+    if (!best) return null;
+    var c = 0;
+    Object.keys(best.q).forEach(function (n) { if (best.q[n]) c++; });
+    return { sid: best.sid, date: best.date, correct: c, total: best.total, pct: percent(c, best.total) };
+  }
+
+  /* おわりの演出の段階。完走のお祝い（base）は毎回。前回より正答率が上がったら up、全問正解は perfect */
+  function finishTier(prev, correct, total) {
+    var pct = percent(correct, total);
+    var up = prev ? pct - prev.pct : null;
+    var tier = total && correct === total ? 'perfect' : (prev && up > 0 ? 'up' : 'base');
+    return { tier: tier, pct: pct, up: up };
+  }
+
   /* 画面に出る字の数（空白、［ ］、ふりがなは数えない） */
   function sentenceLength(sentence) {
     return String(sentence).replace(/\{([^|}]+)\|[^}]+\}/g, '$1').replace(/[\s［］]/g, '').length;
@@ -258,6 +289,7 @@
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
+    percent: percent, lastSession: lastSession, finishTier: finishTier,
     sentenceHtml: sentenceHtml, sentenceLength: sentenceLength, escapeHtml: escapeHtml
   };
 });
