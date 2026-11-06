@@ -4,6 +4,7 @@
   var L = window.KanjiLogic;
   var S = window.KanjiSound;
   var FX = window.KanjiFx;
+  var V = window.KanjiVoice;
   var KEYS = {
     config: 'kt_config',
     questions: 'kt_questions',
@@ -403,16 +404,23 @@
       setTimeout(next, 850);
     } else {
       S.play('wrong');
+      // 正しい読みを声で聞かせる（「おと」がオンで、日本語の声がある端末だけ）
+      var canSay = V && V.ready() && S.enabled();
       var after = app.querySelector('.after');
       after.innerHTML =
         '<div class="feedback" role="status">' +
         (it.type === L.TYPE_REVERSE
           ? '<p class="answer">「' + esc(it.reading) + '」は <strong class="kanji-answer">' + esc(it.word) + '</strong></p>'
           : '<p class="answer">' + esc(it.word) + ' は「<strong>' + esc(it.reading) + '</strong>」</p>') +
+        (canSay ? '<button class="text-btn listen" type="button">🔈 もういちど きく</button>' : '') +
         '<p class="again">また でてくるね。</p>' +
         (it.hint && !hintUsed ? '<p class="meaning">💡 ' + esc(it.hint) + '</p>' : '') +
         '</div>' +
         '<button class="chunky go next">つぎへ</button>';
+      if (canSay) {
+        setTimeout(function () { V.say(it.reading); }, 300);   // まちがいの音と重ならないように少し待つ
+        after.querySelector('.listen').addEventListener('click', function () { V.say(it.reading, { rate: 0.7 }); });
+      }
       var nb = after.querySelector('.next');
       var nextReady = holdTaps(after);
       nb.addEventListener('click', function () { if (nextReady()) next(); });
@@ -508,12 +516,14 @@
       '<dt>問題</dt><dd>' + (qc ? qc.items.length + '問（' + esc(new Date(qc.at).toLocaleString('ja-JP')) + ' に取得）' : 'まだ取得していません') + '</dd>' +
       '<dt>記録</dt><dd>' + log.length + '件</dd>' +
       '<dt>未送信</dt><dd>' + box.length + '件</dd>' +
+      '<dt>読み上げ</dt><dd>' + (V && V.ready() ? esc(V.voiceName()) + (S.enabled() ? '' : '（「おと」がオフなので読みません）') : '日本語の声が見つかりません') + '</dd>' +
       '</dl>' +
       '<p class="msg' + (msg ? (good ? ' good' : ' bad') : '') + '">' + esc(msg || '') + '</p>' +
       (isDemoDevice() ? '' : '<button class="chunky" data-act="demo">おためしで やってみる（記録しない）</button>') +
       '<button class="chunky" data-act="sync">記録をいま送る</button>' +
       '<button class="chunky" data-act="reload">問題を読みなおす</button>' +
       '<button class="chunky" data-act="resync">記録をシートに合わせる</button>' +
+      '<button class="chunky" data-act="voice">読み上げを ためす</button>' +
       (installPrompt ? '<button class="chunky" data-act="install">ホーム画面に追加</button>' : '') +
       '<button class="chunky" data-act="setup">接続先を設定しなおす</button>' +
       '<button class="chunky" data-act="demo-device">' + (isDemoDevice() ? 'おためし専用をやめる' : 'この端末をおためし専用にする') + '</button>' +
@@ -554,6 +564,11 @@
             var left = load(KEYS.outbox, []).length;
             renderParent('シートに合わせました（記録 ' + n + '件' + (left ? '、うち未送信 ' + left + '件' : '') + '）。', true);
           }, function () { renderParent('つながりませんでした。通信を確認してください。'); });
+        } else if (a === 'voice') {
+          S.unlock();
+          if (!V || !V.ready()) renderParent('日本語の声が見つかりません。端末の設定で、読み上げ（テキスト読み上げ）の日本語の音声を入れてください。');
+          else if (!S.enabled()) renderParent('「おと」がオフです。ホームの「🔇 おと オフ」を押してオンにしてください。');
+          else { V.say('げんば。しゃこ。きょねん。'); renderParent('読み上げました：' + V.voiceName(), true); }
         } else if (a === 'install' && installPrompt) {
           installPrompt.prompt();
           installPrompt = null;

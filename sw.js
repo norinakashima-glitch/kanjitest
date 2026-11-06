@@ -1,5 +1,5 @@
 /* オフラインでも開けるようにする。更新したら VERSION を上げる */
-var VERSION = 'v11';
+var VERSION = 'v12';
 var SHELL = 'shell-' + VERSION;
 var FONTS = 'fonts-v1';
 var FILES = [
@@ -9,6 +9,7 @@ var FILES = [
   './logic.js',
   './sound.js',
   './fx.js',
+  './speech.js',
   './app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
