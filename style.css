@@ -197,6 +197,10 @@ mark.target {
   color: var(--ink-soft);
 }
 .choice.is-dim { opacity: .45; }
+/* 逆向き（ひらがなを見て漢字を選ぶ） */
+.ask { margin: 0 0 4px; font-size: .95rem; font-weight: 700; color: var(--ink-soft); }
+.choice.kanji-choice { font-family: var(--f-kanji); font-weight: 600; font-size: clamp(1.6rem, 7vw, 2rem); letter-spacing: .06em; }
+.kanji-answer { font-family: var(--f-kanji); font-size: 1.3em; }
 /* 出てすぐの0.5秒は押せない。うすく見せて、押せるようになったら はっきりさせる */
 .choices .choice, .after .next { transition: opacity .15s ease, transform .08s ease, box-shadow .08s ease, background-color .15s ease; }
 .choices.is-wait .choice, .after.is-wait .next { opacity: .6; }

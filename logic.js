@@ -19,6 +19,10 @@
   // 1日にできる回数。毎日の目標は1回で、2〜15回目はおまけ
   var MAX_GAMES = 15;
   var TYPE_READING = '読み';
+  // 逆向き（ひらがなを見て漢字を選ぶ）。読みで正解できた語だけ、1回に最大5問
+  var TYPE_REVERSE = '逆';
+  var MAX_REVERSE = 5;
+  var READ_MS = 1000; // これより速い正解は「読めた」に数えない
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -47,13 +51,14 @@
    * status: learning（間違えて出し直し中） / check（初回正解、確認待ち） / done（卒業）
    * 期限より前に正解しても（正解済みの語として出たとき）、段階は進めない。
    */
-  function buildState(log) {
+  function buildState(log, type) {
+    type = type || TYPE_READING;
     var sorted = log.slice().sort(function (a, b) {
       return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
     });
     var st = {};
     sorted.forEach(function (r) {
-      if (r.type && r.type !== TYPE_READING) return;
+      if ((r.type || TYPE_READING) !== type) return;
       var k = itemKey(r.word, r.reading);
       var s = st[k];
       if (!s) {
@@ -123,6 +128,31 @@
     return a;
   }
 
+  // 例文と「別の例文1〜5」から1つ選ぶ。新しい語はいつもの例文
+  function pickVariant(q, reason, rng) {
+    var variants = [{ text: q.sentence, name: '例文' }];
+    for (var n = 1; n <= 5; n++) {
+      var t = q['alt' + n] !== undefined ? q['alt' + n] : (n <= 2 ? (q.alts || [])[n - 1] : '');
+      if (t) variants.push({ text: t, name: '別の例文' + n });
+    }
+    return reason === '新規' ? variants[0] : variants[Math.floor(rng() * variants.length)];
+  }
+
+  // 逆向きの1問：例文の［語］を［よみ］にかえて、漢字を4つから選ぶ
+  function makeReverseItem(q, k, reason, rng) {
+    var v = pickVariant(q, reason === '新規' ? '' : reason, rng);
+    var text = String(v.text);
+    text = text.indexOf('［' + q.word + '］') >= 0 ? text.replace('［' + q.word + '］', '［' + q.reading + '］')
+      : text.replace(q.word, '［' + q.reading + '］');
+    var choices = [{ text: q.word, correct: true, type: '' }];
+    for (var i = 0; i < 3; i++) choices.push({ text: q.rwrongs[i], correct: false, type: '' });
+    return {
+      qid: q.id, key: k, word: q.word, reading: q.reading, type: TYPE_REVERSE,
+      sentence: text, variant: v.name, choices: shuffle(choices, rng), hint: q.hint || '',
+      source: q.source || '', reason: reason, grade: Number(q.grade) || 9
+    };
+  }
+
   function makeItem(k, reason, groups, rng) {
     var qs = groups[k];
     var q;
@@ -132,12 +162,7 @@
       q = qs[Math.floor(rng() * qs.length)];
     }
     // 新しい語はいつもの例文、復習では「別の例文」もまぜる。どれを出したかは記録に残す
-    var a1 = q.alt1 !== undefined ? q.alt1 : (q.alts || [])[0];
-    var a2 = q.alt2 !== undefined ? q.alt2 : (q.alts || [])[1];
-    var variants = [{ text: q.sentence, name: '例文' }];
-    if (a1) variants.push({ text: a1, name: '別の例文1' });
-    if (a2) variants.push({ text: a2, name: '別の例文2' });
-    var v = reason === '新規' ? variants[0] : variants[Math.floor(rng() * variants.length)];
+    var v = pickVariant(q, reason, rng);
     var choices = [{ text: q.reading, correct: true, type: '' }];
     for (var i = 0; i < 3; i++) {
       choices.push({ text: q.wrongs[i], correct: false, type: (q.wrongTypes && q.wrongTypes[i]) || '' });
@@ -185,7 +210,19 @@
       return st[a].last < st[b].last ? -1 : st[a].last > st[b].last ? 1 : 0;
     });
 
-    var N = SESSION_SIZE;
+    // 逆向きにできる語：読みで（1秒以上かけて）正解したことがあり、漢字の選択肢がそろっている語
+    var readOk = {};
+    log.forEach(function (r) {
+      if ((r.type || TYPE_READING) === TYPE_READING && r.correct && (r.ms === undefined || Number(r.ms) >= READ_MS)) {
+        readOk[itemKey(r.word, r.reading)] = true;
+      }
+    });
+    var revCand = g.order.filter(function (k) {
+      return readOk[k] && g.groups[k].some(function (q) { return q.rwrongs && q.rwrongs.length >= 3 && q.rwrongs.every(Boolean); });
+    });
+    var nRev = Math.min(MAX_REVERSE, revCand.length);
+
+    var N = SESSION_SIZE - nRev;
     due = retry.concat(due);
     var rev = due.slice(0, MAX_REVIEW);
     var kn = known.slice(0, KNOWN);
@@ -205,15 +242,49 @@
     nw.forEach(function (k) { picks.push({ k: k, reason: '新規' }); });
 
     var items = picks.map(function (p) { return makeItem(p.k, p.reason, g.groups, rng); });
+
+    // 逆向き：期限が来た語 → まだ逆向きで出していない語 → 前に正解した語（古い順）。読みで出す語とは重ねない
+    if (nRev) {
+      var used = {};
+      picks.forEach(function (p) { used[p.k] = true; });
+      var rst = buildState(log, TYPE_REVERSE);
+      var rDue = [], rFresh = [], rKnown = [];
+      revCand.forEach(function (k) {
+        if (used[k]) return;
+        var s = rst[k];
+        if (!s) rFresh.push(k);
+        else if ((s.status === 'learning' || s.status === 'check') && s.due <= today) rDue.push(k);
+        else if (!(s.status === 'learning' && !s.lastCorrect)) rKnown.push(k);
+      });
+      rKnown.sort(function (a, b) { return rst[a].last < rst[b].last ? -1 : rst[a].last > rst[b].last ? 1 : 0; });
+      var rPick = rDue.concat(shuffle(rFresh, rng), rKnown).slice(0, nRev);
+      rPick.forEach(function (k) {
+        var s = rst[k];
+        var reason = !s ? '新規' : (s.status === 'learning' || s.status === 'check') && s.due <= today ? '復習' : '正解済み';
+        var qs = g.groups[k].filter(function (q) { return q.rwrongs && q.rwrongs.length >= 3 && q.rwrongs.every(Boolean); });
+        items.push(makeReverseItem(qs[Math.floor(rng() * qs.length)], k, reason, rng));
+      });
+      // 逆向きの語が足りないときは、読みの問題で30問にする
+      var extra = fresh.slice(nw.length).concat(due.slice(rev.length), known.slice(kn.length)).filter(function (k) {
+        return !used[k] && rPick.indexOf(k) < 0;
+      });
+      while (items.length < SESSION_SIZE && extra.length) {
+        var k2 = extra.shift();
+        items.push(makeItem(k2, st[k2] ? '正解済み' : '新規', g.groups, rng));
+      }
+    }
     // 1問目は、できるだけ前に正解した語にする（はじめに1つ決まると取りかかりやすい）
     // 正解済みの語がないとき（はじめの日など）は、いちばん学年の低い語にする
     var first = null;
     for (var i = 0; i < items.length; i++) {
-      if (items[i].reason === '正解済み') { first = items.splice(i, 1)[0]; break; }
+      if (items[i].reason === '正解済み' && items[i].type === TYPE_READING) { first = items.splice(i, 1)[0]; break; }
     }
     if (!first && items.length) {
-      var low = 0;
-      items.forEach(function (it, j) { if (it.grade < items[low].grade) low = j; });
+      var low = -1;
+      items.forEach(function (it, j) {
+        if (it.type === TYPE_READING && (low < 0 || it.grade < items[low].grade)) low = j;
+      });
+      if (low < 0) low = 0;
       first = items.splice(low, 1)[0];
     }
     items = spreadOut(shuffle(items, rng));
@@ -304,6 +375,7 @@
 
   return {
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
+    TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE,
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,

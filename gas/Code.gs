@@ -16,7 +16,8 @@ var SHEET_SW = '集計_語';
 var TZ = 'Asia/Tokyo';
 
 var Q_HEADERS = ['ID', '種類', '語', '読み', '例文', '誤答1', '誤答2', '誤答3', '誤答の種類', 'ヒント',
-  '別の例文1', '別の例文2', '字', '学年', '教科', '出典', '有効', '追加日', 'メモ'];
+  '別の例文1', '別の例文2', '字', '学年', '教科', '出典', '有効', '追加日', 'メモ',
+  '別の例文3', '別の例文4', '別の例文5', '逆の誤答1', '逆の誤答2', '逆の誤答3'];
 var R_HEADERS = ['記録ID', '日時', '日付', 'セッション', '何問目', '全問数', '問題ID', '語', '字', '問題の種類',
   '正誤', '選んだ選択肢', '誤答の種類', '正しい読み', '回答時間(秒)', 'ヒント', '出題区分', '出典',
   '出した例文', '例文の字数', '押した位置', '早すぎたタップ'];
@@ -27,10 +28,10 @@ var SD_HEADERS = ['日付', '回数', '問題数', '正解', '正答率', '1秒�
   '新しい語', '新しい語の正解', '復習', '復習の正解', 'やりなおし', 'やりなおしの正解', '正解済み', '正解済みの正解',
   '1秒未満', '早すぎたタップ', 'ヒント', '正解までの秒数(中央値)',
   '誤答_濁', '誤答_音', '誤答_訓', '誤答_長', '誤答_似', '長い例文', '長い例文の正解', '短い例文', '短い例文の正解',
-  '未出題', '練習中', '定着中', '確認待ち', '卒業', '読めた語', '全部の語', '集計した日時'];
+  '未出題', '練習中', '定着中', '確認待ち', '卒業', '読めた語', '全部の語', '集計した日時', '逆向き', '逆向きの正解'];
 var SW_HEADERS = ['語', '読み', '問題ID', '学年', '教科', '出典', '状態', '段階', '次に出る日', '出た回数', '正解',
   '不正解', '正答率', '1秒以上の正答率', 'はじめて出た日', '最後の日', '最後の結果', 'よく選ぶ誤答',
-  'よくある誤答の種類', '正解した日数'];
+  'よくある誤答の種類', '正解した日数', '逆向きの回数', '逆向きの正解'];
 // アプリ（logic.js）と同じ間隔反復
 var SRS_INTERVALS = [1, 3, 7, 14, 30];
 var SRS_CHECK_DAYS = 14;
@@ -246,9 +247,13 @@ function readQuestions_() {
       wrongs: [get(r, '誤答1'), get(r, '誤答2'), get(r, '誤答3')],
       wrongTypes: get(r, '誤答の種類').split(/[,、，]/).map(function (s) { return s.trim(); }),
       hint: get(r, 'ヒント'),
-      alts: [get(r, '別の例文1'), get(r, '別の例文2')].filter(String),
+      alts: [1, 2, 3, 4, 5].map(function (n) { return get(r, '別の例文' + n); }).filter(String),
       alt1: get(r, '別の例文1'),
       alt2: get(r, '別の例文2'),
+      alt3: get(r, '別の例文3'),
+      alt4: get(r, '別の例文4'),
+      alt5: get(r, '別の例文5'),
+      rwrongs: [get(r, '逆の誤答1'), get(r, '逆の誤答2'), get(r, '逆の誤答3')].filter(String),
       kanji: get(r, '字'),
       grade: get(r, '学年'),
       subject: get(r, '教科'),
@@ -441,6 +446,15 @@ function updateSummary_() {
 
 // 計算だけ（シートにはさわらない）。recs は答えの記録、questions は今の問題
 function summarize_(questions, recs, now) {
+  // 逆向き（漢字を選ぶ）は、読みの段階や正答率とは分けて数える
+  var revDay = {}, revWord = {};
+  recs.forEach(function (x) {
+    if (x.type !== '逆') return;
+    var d = revDay[x.date] || (revDay[x.date] = { n: 0, ok: 0 });
+    var w = revWord[x.word + '|' + x.reading] || (revWord[x.word + '|' + x.reading] = { n: 0, ok: 0 });
+    d.n++; w.n++;
+    if (x.correct) { d.ok++; w.ok++; }
+  });
   recs = recs.filter(function (x) { return x.type === '読み'; }).sort(function (a, b) {
     return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.t - b.t) || (a.i - b.i);
   });
@@ -487,7 +501,8 @@ function summarize_(questions, recs, now) {
       '誤答_濁': wrongType('濁'), '誤答_音': wrongType('音'), '誤答_訓': wrongType('訓'), '誤答_長': wrongType('長'), '誤答_似': wrongType('似'),
       '長い例文': sc(long), '長い例文の正解': sc(both(long)), '短い例文': sc(short), '短い例文の正解': sc(both(short)),
       '未出題': counts['未出題'], '練習中': counts['練習中'], '定着中': counts['定着中'], '確認待ち': counts['確認待ち'],
-      '卒業': counts['卒業'], '読めた語': readN, '全部の語': total, '集計した日時': now
+      '卒業': counts['卒業'], '読めた語': readN, '全部の語': total, '集計した日時': now,
+      '逆向き': revDay[day] ? revDay[day].n : 0, '逆向きの正解': revDay[day] ? revDay[day].ok : 0
     };
     days.push(SD_HEADERS.map(function (h) { return row[h] === undefined ? '' : row[h]; }));
   });
@@ -520,7 +535,8 @@ function summarize_(questions, recs, now) {
       '出た回数': p ? p.n : 0, '正解': p ? p.ok : 0, '不正解': p ? p.n - p.ok : 0, '正答率': p ? ratio_(p.ok, p.n) : '',
       '1秒以上の正答率': p ? ratio_(p.slowOk, p.slow) : '', 'はじめて出た日': p ? p.first : '', '最後の日': p ? p.last : '',
       '最後の結果': p ? (p.lastOk ? '正解' : '不正解') : '', 'よく選ぶ誤答': p ? top(p.picks) : '',
-      'よくある誤答の種類': p ? top(p.types) : '', '正解した日数': p ? Object.keys(p.okDays).length : 0
+      'よくある誤答の種類': p ? top(p.types) : '', '正解した日数': p ? Object.keys(p.okDays).length : 0,
+      '逆向きの回数': revWord[k] ? revWord[k].n : 0, '逆向きの正解': revWord[k] ? revWord[k].ok : 0
     };
     return SW_HEADERS.map(function (h) { return row[h] === undefined ? '' : row[h]; });
   });

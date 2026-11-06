@@ -310,11 +310,12 @@
       '<span class="count">' + (session.idx + 1) + ' / ' + total + '</span>' +
       '</div>' +
       (it.source === '日記' ? '<p class="badge">きみの日記から</p>' : '') +
-      '<p class="sentence">' + L.sentenceHtml(it.sentence, it.word) + '</p>' +
+      (it.type === L.TYPE_REVERSE ? '<p class="ask">かんじで かくと どれ？</p>' : '') +
+      '<p class="sentence">' + L.sentenceHtml(it.sentence, it.type === L.TYPE_REVERSE ? it.reading : it.word) + '</p>' +
       '<div class="hint-row">' + (it.hint ? '<button class="text-btn" data-act="hint">ヒントを みる</button>' : '') + '</div>' +
       '<div class="choices">' +
       it.choices.map(function (c, i) {
-        return '<button class="chunky choice" data-i="' + i + '">' + esc(c.text) + '</button>';
+        return '<button class="chunky choice' + (it.type === L.TYPE_REVERSE ? ' kanji-choice' : '') + '" data-i="' + i + '">' + esc(c.text) + '</button>';
       }).join('') +
       '</div>' +
       '<p class="praise" aria-live="polite"></p>' +
@@ -405,7 +406,9 @@
       var after = app.querySelector('.after');
       after.innerHTML =
         '<div class="feedback" role="status">' +
-        '<p class="answer">' + esc(it.word) + ' は「<strong>' + esc(it.reading) + '</strong>」</p>' +
+        (it.type === L.TYPE_REVERSE
+          ? '<p class="answer">「' + esc(it.reading) + '」は <strong class="kanji-answer">' + esc(it.word) + '</strong></p>'
+          : '<p class="answer">' + esc(it.word) + ' は「<strong>' + esc(it.reading) + '</strong>」</p>') +
         '<p class="again">また でてくるね。</p>' +
         (it.hint && !hintUsed ? '<p class="meaning">💡 ' + esc(it.hint) + '</p>' : '') +
         '</div>' +
