@@ -387,7 +387,12 @@
     var ball = app.querySelector('.ball');
     if (ball) ball.style.left = ballLeft(session.idx, total);
 
-    if (ch.correct) {
+    if (ch.correct && it.quiet) {
+      // 物語の悲しい場面などの問題：はでな演出はせず、○としずかな音だけ
+      app.querySelector('.praise').textContent = '○ せいかい';
+      S.play('soft');
+      setTimeout(next, 850);
+    } else if (ch.correct) {
       // つづけて正解した数（間違えたら、なにも言わずに 0 にもどす）
       var combo = 0;
       for (var k = session.results.length - 1; k >= 0 && session.results[k].correct; k--) combo++;

@@ -107,6 +107,8 @@
         [0.25, 0.75].forEach(function (t) { clap(t, 0.2); });
         [784, 988, 1175, 1568].forEach(function (f, i) { tone(f, i * 0.09, 0.16, { type: 'square', volume: 0.06 }); });
         [784, 988, 1175].forEach(function (f) { tone(f, 0.42, 0.5, { type: 'triangle', volume: 0.1 }); });
+      } else if (name === 'soft') {
+        tone(659, 0, 0.35, { type: 'sine', volume: 0.1 });          // しずかな ミ を1回（物語の悲しい場面の問題で使う）
       } else if (name === 'wrong') {
         tone(392, 0, 0.28, { type: 'sine', volume: 0.12 });         // ひくめの ソ を1回だけ
       } else if (name === 'goal') {

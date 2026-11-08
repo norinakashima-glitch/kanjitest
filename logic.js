@@ -23,6 +23,8 @@
   var TYPE_REVERSE = '逆';
   var MAX_REVERSE = 5;
   var READ_MS = 1000; // これより速い正解は「読めた」に数えない
+  // 「演出」が「静か」の語（物語の悲しい場面など）は、1回に最大5問。正解してもはでな演出をしない
+  var MAX_QUIET = 5;
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -151,7 +153,7 @@
     return {
       qid: q.id, key: k, word: q.word, reading: q.reading, type: TYPE_REVERSE,
       sentence: text, variant: v.name, choices: shuffle(choices, rng), hint: q.hint || '',
-      source: q.source || '', reason: reason, grade: Number(q.grade) || 9
+      source: q.source || '', reason: reason, grade: Number(q.grade) || 9, quiet: !!q.quiet
     };
   }
 
@@ -172,7 +174,8 @@
     return {
       qid: q.id, key: k, word: q.word, reading: q.reading, type: TYPE_READING,
       sentence: v.text, variant: v.name, choices: shuffle(choices, rng), hint: q.hint || '',
-      source: q.source || '', reason: reason, grade: Number(q.grade) || 9
+      source: q.source || '', reason: reason, grade: Number(q.grade) || 9,
+      quiet: qs.some(function (x) { return !!x.quiet; })
     };
   }
 
@@ -226,14 +229,26 @@
 
     var N = SESSION_SIZE - nRev;
     due = retry.concat(due);
-    var rev = due.slice(0, MAX_REVIEW);
-    var kn = known.slice(0, KNOWN);
-    var nw = fresh.slice(0, Math.max(0, N - rev.length - kn.length));
+    // 「静か」の語は1回に MAX_QUIET 問まで。こえた分は次の回にまわす
+    var isQuiet = function (k) { return g.groups[k].some(function (q) { return !!q.quiet; }); };
+    var quietLeft = MAX_QUIET, taken = {};
+    var take = function (list, n) {
+      var out = [];
+      for (var i = 0; i < list.length && out.length < n; i++) {
+        var k = list[i];
+        if (taken[k]) continue;
+        if (isQuiet(k)) { if (quietLeft <= 0) continue; quietLeft--; }
+        taken[k] = true;
+        out.push(k);
+      }
+      return out;
+    };
+    var rev = take(due, MAX_REVIEW);
+    var kn = take(known, KNOWN);
+    var nw = take(fresh, Math.max(0, N - rev.length - kn.length));
     // 足りないときは、復習の残り → 正解済みの残り の順で埋める
-    var extraDue = due.slice(rev.length);
-    while (rev.length + kn.length + nw.length < N && extraDue.length) rev.push(extraDue.shift());
-    var extraKnown = known.slice(kn.length);
-    while (rev.length + kn.length + nw.length < N && extraKnown.length) kn.push(extraKnown.shift());
+    rev = rev.concat(take(due, N - rev.length - kn.length - nw.length));
+    kn = kn.concat(take(known, N - rev.length - kn.length - nw.length));
 
     var picks = [];
     rev.forEach(function (k) {
@@ -253,13 +268,19 @@
       var rDue = [], rFresh = [], rKnown = [];
       revCand.forEach(function (k) {
         if (used[k]) return;
+        if (isQuiet(k) && quietLeft <= 0) return;
         var s = rst[k];
         if (!s) rFresh.push(k);
         else if ((s.status === 'learning' || s.status === 'check') && s.due <= today) rDue.push(k);
         else if (!(s.status === 'learning' && !s.lastCorrect)) rKnown.push(k);
       });
       rKnown.sort(function (a, b) { return rst[a].last < rst[b].last ? -1 : rst[a].last > rst[b].last ? 1 : 0; });
-      var rPick = rDue.concat(shuffle(rFresh, rng), rKnown).slice(0, nRev);
+      var rPick = [];
+      rDue.concat(shuffle(rFresh, rng), rKnown).forEach(function (k) {
+        if (rPick.length >= nRev) return;
+        if (isQuiet(k)) { if (quietLeft <= 0) return; quietLeft--; }
+        rPick.push(k);
+      });
       rPick.forEach(function (k) {
         var s = rst[k];
         var reason = !s ? '新規' : (s.status === 'learning' || s.status === 'check') && s.due <= today ? '復習' : '正解済み';
@@ -267,11 +288,14 @@
         items.push(makeReverseItem(qs[Math.floor(rng() * qs.length)], k, reason, rng));
       });
       // 逆向きの語が足りないときは、読みの問題で30問にする
-      var extra = fresh.slice(nw.length).concat(due.slice(rev.length), known.slice(kn.length)).filter(function (k) {
-        return !used[k] && rPick.indexOf(k) < 0;
+      var extra = fresh.concat(due, known).filter(function (k) {
+        return !used[k] && !taken[k] && rPick.indexOf(k) < 0;
       });
       while (items.length < SESSION_SIZE && extra.length) {
         var k2 = extra.shift();
+        if (taken[k2]) continue;
+        if (isQuiet(k2)) { if (quietLeft <= 0) continue; quietLeft--; }
+        taken[k2] = true;
         items.push(makeItem(k2, st[k2] ? '正解済み' : '新規', g.groups, rng));
       }
     }
@@ -377,7 +401,7 @@
 
   return {
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
-    TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE,
+    TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE, MAX_QUIET: MAX_QUIET,
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
