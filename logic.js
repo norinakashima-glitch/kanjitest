@@ -25,6 +25,8 @@
   var READ_MS = 1000; // これより速い正解は「読めた」に数えない
   // 「演出」が「静か」の語（物語の悲しい場面など）は、1回に最大5問。正解してもはでな演出をしない
   var MAX_QUIET = 5;
+  // 早押しの回：1問の時間の真ん中が1秒未満の回。記録は残すが、覚えた度合い（間隔反復・やりなおし・逆向きにできる語）には数えない。画面には何も出さない
+  var FAST_GAME_MS = 1000;
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -47,6 +49,28 @@
       var t = a[i]; a[i] = a[j]; a[j] = t;
     }
     return a;
+  }
+
+  /* 早押しの回のセッションID。時間は「結果」タブと同じく0.1秒単位にまるめてから真ん中を出す（アプリとシートで判定をそろえる） */
+  function fastSessions(log) {
+    var by = {};
+    log.forEach(function (r) {
+      if (!r.sid || r.ms === undefined || r.ms === null || r.ms === '' || isNaN(Number(r.ms))) return;
+      (by[r.sid] || (by[r.sid] = [])).push(Math.round(Number(r.ms) / 100));
+    });
+    var fast = {};
+    Object.keys(by).forEach(function (sid) {
+      var a = by[sid].sort(function (x, y) { return x - y; }), n = a.length, m = Math.floor(n / 2);
+      var med = n % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+      if (med * 100 < FAST_GAME_MS) fast[sid] = true;
+    });
+    return fast;
+  }
+
+  /* 覚えた度合いに数える記録（早押しの回をのぞく） */
+  function countedLog(log) {
+    var fast = fastSessions(log);
+    return log.filter(function (r) { return !(r.sid && fast[r.sid]); });
   }
 
   /* 回答の記録から、語ごとの状態を作り直す。
@@ -182,6 +206,7 @@
   /* 今日の30問を作る */
   function buildSession(questions, log, today, rng) {
     rng = rng || Math.random;
+    log = countedLog(log);
     var g = groupQuestions(questions);
     var st = buildState(log);
     var rank = {};
@@ -403,6 +428,7 @@
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
     TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE, MAX_QUIET: MAX_QUIET,
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
+    FAST_GAME_MS: FAST_GAME_MS, fastSessions: fastSessions, countedLog: countedLog,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
     percent: percent, lastSession: lastSession, finishTier: finishTier,

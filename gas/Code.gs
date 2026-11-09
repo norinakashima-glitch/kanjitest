@@ -28,7 +28,8 @@ var SD_HEADERS = ['日付', '回数', '問題数', '正解', '正答率', '1秒�
   '新しい語', '新しい語の正解', '復習', '復習の正解', 'やりなおし', 'やりなおしの正解', '正解済み', '正解済みの正解',
   '1秒未満', '早すぎたタップ', 'ヒント', '正解までの秒数(中央値)',
   '誤答_濁', '誤答_音', '誤答_訓', '誤答_長', '誤答_似', '長い例文', '長い例文の正解', '短い例文', '短い例文の正解',
-  '未出題', '練習中', '定着中', '確認待ち', '卒業', '読めた語', '全部の語', '集計した日時', '逆向き', '逆向きの正解'];
+  '未出題', '練習中', '定着中', '確認待ち', '卒業', '読めた語', '全部の語', '集計した日時', '逆向き', '逆向きの正解',
+  '早押しの回'];
 var SW_HEADERS = ['語', '読み', '問題ID', '学年', '教科', '出典', '状態', '段階', '次に出る日', '出た回数', '正解',
   '不正解', '正答率', '1秒以上の正答率', 'はじめて出た日', '最後の日', '最後の結果', 'よく選ぶ誤答',
   'よくある誤答の種類', '正解した日数', '逆向きの回数', '逆向きの正解'];
@@ -36,6 +37,8 @@ var SW_HEADERS = ['語', '読み', '問題ID', '学年', '教科', '出典', '�
 var SRS_INTERVALS = [1, 3, 7, 14, 30];
 var SRS_CHECK_DAYS = 14;
 var FAST_SEC = 1;      // これより速い答えは、読まずに押したとみなす
+// 早押しの回：1問の時間の真ん中が1秒未満の回。記録（結果タブ）には残すが、集計と段階には数えない（logic.js の FAST_GAME_MS と同じ）
+var FAST_GAME_SEC = 1;
 var LONG_SENTENCE = 25; // この字数以上を「長い例文」とする
 
 // 学年別漢字（小1〜小3）。ここにない字は「4」（小4以上）にする
@@ -435,7 +438,8 @@ function updateSummary_() {
       word: str_(get('語')), reading: str_(get('正しい読み')), type: str_(get('問題の種類')) || '読み',
       correct: str_(get('正誤')) === '正解', chosen: str_(get('選んだ選択肢')), chosenType: str_(get('誤答の種類')),
       sec: Number(get('回答時間(秒)')) || 0, hint: !!str_(get('ヒント')), reason: str_(get('出題区分')),
-      slen: Number(get('例文の字数')) || 0, blocked: Number(get('早すぎたタップ')) || 0
+      slen: Number(get('例文の字数')) || 0, blocked: Number(get('早すぎたタップ')) || 0,
+      sid: str_(get('セッション'))
     };
   }).filter(function (x) { return x.date && x.word; });
   var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
@@ -446,8 +450,29 @@ function updateSummary_() {
   return { days: out.days.length, words: out.words.length };
 }
 
+// 早押しの回のセッション。時間は0.1秒単位で、真ん中が FAST_GAME_SEC 未満（logic.js の fastSessions と同じ決め方）
+function fastSessions_(recs) {
+  var by = {};
+  recs.forEach(function (x) {
+    if (x.sid) (by[x.sid] || (by[x.sid] = [])).push(Math.round(Number(x.sec) * 10));
+  });
+  var fast = {};
+  Object.keys(by).forEach(function (sid) {
+    var a = by[sid].sort(function (p, q) { return p - q; }), n = a.length, m = Math.floor(n / 2);
+    var med = n % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+    if (med < FAST_GAME_SEC * 10) fast[sid] = true;
+  });
+  return fast;
+}
+
 // 計算だけ（シートにはさわらない）。recs は答えの記録、questions は今の問題
 function summarize_(questions, recs, now) {
+  // 早押しの回は数えない（日ごとに回数だけ出す）
+  var fast = fastSessions_(recs), fastDay = {};
+  recs.forEach(function (x) {
+    if (x.sid && fast[x.sid]) (fastDay[x.date] || (fastDay[x.date] = {}))[x.sid] = true;
+  });
+  recs = recs.filter(function (x) { return !(x.sid && fast[x.sid]); });
   // 逆向き（漢字を選ぶ）は、読みの段階や正答率とは分けて数える
   var revDay = {}, revWord = {};
   recs.forEach(function (x) {
@@ -468,6 +493,11 @@ function summarize_(questions, recs, now) {
     if (!byDay[x.date]) { byDay[x.date] = []; order.push(x.date); }
     byDay[x.date].push(x);
   });
+  // 早押しの回しかなかった日も、行を出す
+  Object.keys(fastDay).forEach(function (day) {
+    if (!byDay[day]) { byDay[day] = []; order.push(day); }
+  });
+  order.sort();
   order.forEach(function (day) {
     var xs = byDay[day];
     var c = function (f) { return xs.filter(f).length; };
@@ -504,7 +534,8 @@ function summarize_(questions, recs, now) {
       '長い例文': sc(long), '長い例文の正解': sc(both(long)), '短い例文': sc(short), '短い例文の正解': sc(both(short)),
       '未出題': counts['未出題'], '練習中': counts['練習中'], '定着中': counts['定着中'], '確認待ち': counts['確認待ち'],
       '卒業': counts['卒業'], '読めた語': readN, '全部の語': total, '集計した日時': now,
-      '逆向き': revDay[day] ? revDay[day].n : 0, '逆向きの正解': revDay[day] ? revDay[day].ok : 0
+      '逆向き': revDay[day] ? revDay[day].n : 0, '逆向きの正解': revDay[day] ? revDay[day].ok : 0,
+      '早押しの回': fastDay[day] ? Object.keys(fastDay[day]).length : 0
     };
     days.push(SD_HEADERS.map(function (h) { return row[h] === undefined ? '' : row[h]; }));
   });
