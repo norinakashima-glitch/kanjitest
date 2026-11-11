@@ -156,8 +156,8 @@
 
   // 例文と「別の例文1〜5」から1つ選ぶ。新しい語はいつもの例文
   function pickVariant(q, reason, rng, allowTest) {
-    // 読みの問題の復習と2週間後の確認では、学校のテストに近い文（テスト文）があればそれを出す
-    if (allowTest && q.test && (reason === '復習' || reason === '確認')) return { text: q.test, name: 'テスト文' };
+    // 読みの問題の復習・2週間後の確認・正解済みの語では、学校のテストに近い文（テスト文）があればそれを出す
+    if (allowTest && q.test && (reason === '復習' || reason === '確認' || reason === '正解済み')) return { text: q.test, name: 'テスト文' };
     var variants = [{ text: q.sentence, name: '例文' }];
     for (var n = 1; n <= 5; n++) {
       var t = q['alt' + n] !== undefined ? q['alt' + n] : (n <= 2 ? (q.alts || [])[n - 1] : '');
