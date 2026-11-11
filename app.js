@@ -203,6 +203,7 @@
       '<div class="stat"><span>れんぞく</span><b>' + stats.streak + '</b><i>にち</i></div>' +
       '<div class="stat"><span>ぜんぶで</span><b>' + stats.total + '</b><i>にち</i></div>' +
       '</div>' +
+      '<button class="kiroku-btn" data-act="kiroku"><span aria-hidden="true">📊</span>きみの きろく<i aria-hidden="true">›</i></button>' +
       action +
       '<div class="foot">' +
       '<button class="text-btn" data-act="sound" aria-pressed="' + S.enabled() + '">' + soundLabel() + '</button>' +
@@ -230,6 +231,7 @@
           }
         }
         else if (a === 'parent') renderParent();
+        else if (a === 'kiroku') renderKiroku();
         else if (a === 'retry') {
           b.disabled = true;
           refreshQuestions().then(function () { renderHome(); },
@@ -237,6 +239,50 @@
         }
       });
     });
+  }
+
+  /* ---------- がめん：きろく ----------
+     ふえていくものだけを見せる（読めた語の数、前はまちがえたけど今は読める語、続けた日数）。
+     正答率・まちがいの数・答える速さは出さない。早押しの回は数えない */
+  function renderKiroku() {
+    screen = 'kiroku';
+    FX.clear();
+    var log = load(KEYS.log, []);
+    var p = L.progress(questions(), log);
+    var streak = L.dayStats(log, today()).streak;
+    var body;
+    if (!p.total) {
+      body = '<p class="notice">まだ きろくが ないよ。きょうの 30もんを やってみよう！</p>';
+    } else {
+      var max = Math.max.apply(null, p.days.map(function (d) { return d.count; }));
+      var bars = '', labels = '';
+      p.days.forEach(function (d, i) {
+        var day = Number(d.date.slice(8)) + '日';
+        var h = Math.max(3, Math.round(d.count / max * 82));
+        bars += '<li class="kbar' + (i === p.days.length - 1 ? ' is-last' : '') + '" style="--i:' + i + '" aria-label="' + day + ' ' + d.count + 'こ">' +
+          '<span class="kv">' + d.count + '</span><span class="kb" style="height:' + h + '%"></span></li>';
+        labels += '<li>' + day + '</li>';
+      });
+      var plus = p.days.length > 1 && p.total > p.first ?
+        '<p class="kplus">はじめの日から <b>+' + (p.total - p.first) + 'こ</b></p>' : '';
+      body =
+        '<div class="kcard kbig"><p><span class="kl">よめた ことば</span><b class="kn">' + p.total + '</b><span class="ku">こ</span></p>' + plus + '</div>' +
+        '<div class="kcard"><h2>よめた ことばの かず</h2>' +
+        '<ol class="kbars">' + bars + '</ol><ol class="kdays" aria-hidden="true">' + labels + '</ol></div>' +
+        (p.wins.length ?
+          '<div class="kcard kwins"><h2>まえは まちがえた → いまは よめる！</h2><ul>' +
+          p.wins.map(function (w) {
+            return '<li><span class="kk">' + esc(w.word) + '</span><span class="kr">' + esc(w.reading) + '</span><span class="kok">よめた！</span></li>';
+          }).join('') + '</ul></div>' : '');
+    }
+    app.innerHTML =
+      '<section class="kiroku' + (FX.enabled() ? '' : ' no-motion') + '">' +
+      (isDemoDevice() ? demoBanner(false) : '') +
+      '<h1>きみの きろく' + (streak ? '<small>🔥 ' + streak + '日 つづけた</small>' : '') + '</h1>' +
+      body +
+      '<button class="chunky go" data-act="back">もどる</button>' +
+      '</section>';
+    app.querySelector('[data-act="back"]').addEventListener('click', function () { renderHome(); });
   }
 
   function soundLabel() { return S.enabled() ? '🔊 おと オン' : '🔇 おと オフ'; }

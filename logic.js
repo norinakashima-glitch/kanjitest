@@ -271,9 +271,10 @@
     var rev = take(due, MAX_REVIEW);
     var kn = take(known, KNOWN);
     var nw = take(fresh, Math.max(0, N - rev.length - kn.length));
-    // 足りないときは、復習の残り → 正解済みの残り の順で埋める
-    rev = rev.concat(take(due, N - rev.length - kn.length - nw.length));
+    // 新しい語が足りないときは、正解済みの残り → 復習の残り の順で埋める
+    // （苦手な語の復習は MAX_REVIEW 問までにして、正解できる語を多くする。苦手な語ばかりの回にしない）
     kn = kn.concat(take(known, N - rev.length - kn.length - nw.length));
+    rev = rev.concat(take(due, N - rev.length - kn.length - nw.length));
 
     var picks = [];
     rev.forEach(function (k) {
@@ -341,6 +342,45 @@
     items = spreadOut(shuffle(items, rng));
     if (first) items.unshift(first);
     return items;
+  }
+
+  /* きろくの画面に出すもの（早押しの回は数えない。読みの問題だけ）
+     - total：読めた語の数（1秒以上かけて正解したことがある語。「集計_日」の「読めた語」と同じ数え方）
+     - days：やった日ごとの、その日までの読めた語の数（合計なので下がらない）。新しい日から最大 maxDays 日
+     - first：はじめの日の終わりの数
+     - wins：前にまちがえたことがあって、いちばん新しい答えが正解の語から、ランダムに3つ */
+  function progress(questions, log, rng, maxDays) {
+    rng = rng || Math.random;
+    maxDays = maxDays || 7;
+    var g = groupQuestions(questions);
+    var recs = countedLog(log).filter(function (r) { return (r.type || TYPE_READING) === TYPE_READING; })
+      .sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
+    var read = {}, readN = 0, wrong = {}, lastOk = {}, days = [];
+    recs.forEach(function (r) {
+      var k = itemKey(r.word, r.reading);
+      var slow = r.ms === undefined || r.ms === null || r.ms === '' || Math.round(Number(r.ms) / 100) * 100 >= READ_MS;
+      if (r.correct && slow && !read[k] && g.groups[k]) { read[k] = true; readN++; }
+      if (!r.correct) wrong[k] = (wrong[k] || 0) + 1;
+      lastOk[k] = !!r.correct;
+      var d = days[days.length - 1];
+      if (d && d.date === r.date) d.count = readN;
+      else days.push({ date: r.date, count: readN });
+    });
+    var pick = function (min) {
+      return g.order.filter(function (k) { return (wrong[k] || 0) >= min && lastOk[k]; });
+    };
+    var cand = pick(2);
+    if (cand.length < 3) cand = pick(1);
+    var wins = shuffle(cand, rng).slice(0, 3).map(function (k) {
+      var q = g.groups[k][0];
+      return { word: q.word, reading: q.reading };
+    });
+    return {
+      total: readN,
+      first: days.length ? days[0].count : 0,
+      days: days.slice(-maxDays),
+      wins: wins
+    };
   }
 
   /* 連続日数と合計日数（30問を最後までやった日を数える） */
@@ -428,7 +468,7 @@
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
     TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE, MAX_QUIET: MAX_QUIET,
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
-    FAST_GAME_MS: FAST_GAME_MS, fastSessions: fastSessions, countedLog: countedLog,
+    FAST_GAME_MS: FAST_GAME_MS, fastSessions: fastSessions, countedLog: countedLog, progress: progress,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
     buildState: buildState, buildSession: buildSession, dayStats: dayStats,
     percent: percent, lastSession: lastSession, finishTier: finishTier,

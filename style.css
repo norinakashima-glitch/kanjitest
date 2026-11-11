@@ -283,6 +283,49 @@ mark.target {
 }
 .demo-banner .text-btn { padding: 4px 2px; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 10px; background: var(--note-bg); font-size: .95rem; }
+.kiroku-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin: -12px 0 22px; padding: 12px 16px; min-height: 52px;
+  font: inherit; font-size: 1.15rem; font-weight: 700; color: var(--ink); text-align: left;
+  background: var(--card); border: 3px solid var(--edge); border-radius: 16px; cursor: pointer;
+}
+.kiroku-btn i { margin-left: auto; font-style: normal; font-size: 1.5rem; line-height: 1; }
+.kiroku-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- きろく ---------- */
+.kiroku { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+.kiroku h1 { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 1.6rem; margin: 4px 0 0; }
+.kiroku h1 small {
+  font-size: .9rem; font-weight: 700; white-space: nowrap;
+  padding: 4px 10px; border: 2px solid var(--edge); border-radius: 12px; background: var(--card);
+}
+.kcard { background: var(--card); border: 3px solid var(--edge); border-radius: 18px; box-shadow: 4px 4px 0 var(--shadow); padding: 14px 16px; }
+.kcard h2 { font-size: 1rem; margin: 0 0 8px; }
+.kbig p { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; }
+.kbig .kl { font-size: 1.1rem; font-weight: 700; }
+.kbig .kn { font-family: var(--f-call); font-weight: 400; font-size: 4rem; line-height: 1; color: var(--ok); font-variant-numeric: tabular-nums; }
+.kbig .ku { font-size: 1.25rem; font-weight: 700; }
+.kbig .kplus { display: block; margin-top: 4px; font-size: .95rem; font-weight: 700; color: var(--ink-soft); }
+.kplus b { padding: 0 6px; border-radius: 6px; background: var(--marker); color: var(--ink); }
+.kbars, .kdays { list-style: none; margin: 0; padding: 0 4px; display: flex; gap: 10px; }
+.kbars { align-items: flex-end; height: 190px; border-bottom: 3px solid var(--edge); }
+.kbar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; }
+.kv { font-weight: 700; font-size: .95rem; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.kb {
+  width: 100%; background: var(--pitch); border: 2px solid var(--edge); border-bottom: 0; border-radius: 8px 8px 0 0;
+  transform-origin: bottom; animation: kgrow .6s cubic-bezier(.2, .8, .3, 1) both; animation-delay: calc(var(--i) * 70ms);
+}
+.kbar.is-last .kb { background: var(--marker); }
+.no-motion .kb { animation: none; }
+@keyframes kgrow { from { transform: scaleY(0); } }
+.kdays li { flex: 1; text-align: center; padding-top: 6px; font-size: .85rem; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+.kwins ul { list-style: none; margin: 0; padding: 0; }
+.kwins li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 2px dashed var(--miss-bg); }
+.kwins li:first-child { border-top: 0; }
+.kk { font-family: var(--f-kanji); font-weight: 600; font-size: 1.9rem; min-width: 84px; }
+.kr { font-size: 1rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.kok { margin-left: auto; flex: none; font-size: .9rem; font-weight: 700; white-space: nowrap; padding: 3px 10px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); }
+.kiroku > .chunky { margin-top: auto; min-height: 60px; font-size: 1.3rem; }
 
 /* ---------- ゴール ---------- */
 .end { flex: 1; display: flex; flex-direction: column; text-align: center; }
