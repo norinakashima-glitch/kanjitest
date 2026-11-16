@@ -25,6 +25,8 @@
   var READ_MS = 1000; // これより速い正解は「読めた」に数えない
   // 「演出」が「静か」の語（物語の悲しい場面など）は、1回に最大5問。正解してもはでな演出をしない
   var MAX_QUIET = 5;
+  // テスト文がある語で、テスト文を出す割合（のこりは例文・別の例文）
+  var TEST_RATE = 0.5;
   // 早押しの回：1問の時間の真ん中が1秒未満の回。記録は残すが、覚えた度合い（間隔反復・やりなおし・逆向きにできる語）には数えない。画面には何も出さない
   var FAST_GAME_MS = 1000;
 
@@ -156,8 +158,9 @@
 
   // 例文と「別の例文1〜5」から1つ選ぶ。新しい語はいつもの例文
   function pickVariant(q, reason, rng, allowTest) {
-    // 読みの問題の復習・2週間後の確認・正解済みの語では、学校のテストに近い文（テスト文）があればそれを出す
-    if (allowTest && q.test && (reason === '復習' || reason === '確認' || reason === '正解済み')) return { text: q.test, name: 'テスト文' };
+    // 読みの問題の復習・2週間後の確認・正解済みの語では、学校のテストに近い文（テスト文）があれば、2回に1回それを出す。
+    // いつも同じ文だと文ごとおぼえてしまうので、のこりの半分はほかの例文から選ぶ
+    if (allowTest && q.test && (reason === '復習' || reason === '確認' || reason === '正解済み') && rng() < TEST_RATE) return { text: q.test, name: 'テスト文' };
     var variants = [{ text: q.sentence, name: '例文' }];
     for (var n = 1; n <= 5; n++) {
       var t = q['alt' + n] !== undefined ? q['alt' + n] : (n <= 2 ? (q.alts || [])[n - 1] : '');
