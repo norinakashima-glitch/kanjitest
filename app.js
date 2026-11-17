@@ -358,7 +358,9 @@
       '</div>' +
       (it.source === '日記' ? '<p class="badge">きみの日記から</p>' : '') +
       (it.type === L.TYPE_REVERSE ? '<p class="ask">かんじで かくと どれ？</p>' : '') +
-      '<p class="sentence">' + L.sentenceHtml(it.sentence, it.type === L.TYPE_REVERSE ? it.reading : it.word) + '</p>' +
+      (it.bare
+        ? '<div class="qstage"><p class="ask">なんて よむ？</p><p class="bare-word">' + esc(it.word) + '</p></div>'
+        : '<div class="qstage"><p class="sentence">' + L.sentenceHtml(it.sentence, it.type === L.TYPE_REVERSE ? it.reading : it.word) + '</p></div>') +
       '<div class="hint-row">' + (it.hint ? '<button class="text-btn" data-act="hint">ヒントを みる</button>' : '') + '</div>' +
       '<div class="choices">' +
       it.choices.map(function (c, i) {
@@ -418,7 +420,7 @@
       reason: it.reason,
       source: it.source || '',
       variant: it.variant || '例文',
-      slen: L.sentenceLength(it.sentence),
+      slen: it.bare ? 0 : L.sentenceLength(it.sentence),   // 語だけで出したときは 0（集計の長い・短い例文に数えない）
       pos: i + 1,               // 押したボタンの位置（上から 1〜4）
       blocked: blockedTaps      // 早すぎて受け付けなかったタップの数
     };
@@ -432,12 +434,13 @@
 
     var ball = app.querySelector('.ball');
     if (ball) ball.style.left = ballLeft(session.idx, total);
+    showCard(it);
 
     if (ch.correct && it.quiet) {
       // 物語の悲しい場面などの問題：はでな演出はせず、○としずかな音だけ
       app.querySelector('.praise').textContent = '○ せいかい';
       S.play('soft');
-      setTimeout(next, 850);
+      setTimeout(next, CARD_MS);
     } else if (ch.correct) {
       // つづけて正解した数（間違えたら、なにも言わずに 0 にもどす）
       var combo = 0;
@@ -452,7 +455,7 @@
       }
       S.play(combo >= 3 ? 'combo' : 'correct');
       if (navigator.vibrate) { try { navigator.vibrate(c.milestone ? [20, 60, 20] : 25); } catch (e) { /* なにもしない */ } }
-      setTimeout(next, 850);
+      setTimeout(next, CARD_MS);
     } else {
       S.play('wrong');
       // 正しい読みを声で聞かせる（「おと」がオンで、日本語の声がある端末だけ）
@@ -478,6 +481,27 @@
       nb.focus({ preventScroll: true });
       after.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
+  }
+
+  // 答えたあと、問題の文のところに、語を大きく出す（パーツも）。語だけで出した問題は、ここで文も見せる
+  var CARD_MS = 1600;   // 正解のとき、つぎの問題までの時間
+  function showCard(it) {
+    var stage = app.querySelector('.qstage');
+    if (!stage) return;
+    var ps = L.partsOf(it.word, window.KANJI_PARTS, window.KANJI_G12);
+    stage.style.minHeight = stage.offsetHeight + 'px';   // 選択肢の場所がずれないように
+    if (it.bare) app.querySelector('.quiz').classList.add('card-long');   // 文も出すので、かけ声を少し下に出す
+    stage.innerHTML =
+      '<div class="card">' +
+      '<p class="card-word"><ruby>' + esc(it.word) + '<rt>' + esc(it.reading) + '</rt></ruby></p>' +
+      ps.map(function (p) {
+        return '<p class="card-parts"><b>' + esc(p.kanji) + '</b><i>＝</i>' +
+          p.parts.map(function (x) {
+            return '<span class="pp">' + esc(x.part) + (x.name ? '<small>' + esc(x.name) + '</small>' : '') + '</span>';
+          }).join('<i>＋</i>') + '</p>';
+      }).join('') +
+      (it.bare ? '<p class="card-sentence">' + L.sentenceHtml(it.sentence, it.word) + '</p>' : '') +
+      '</div>';
   }
 
   function next() {

@@ -27,6 +27,8 @@
   var MAX_QUIET = 5;
   // テスト文がある語で、テスト文を出す割合（のこりは例文・別の例文）
   var TEST_RATE = 0.5;
+  // 読みの問題で、正解済みの語と2週間後の確認は、文を出さずに語だけで出す（文から当てられないようにする）。文は答えたあとに見せる
+  var BARE_REASONS = ['正解済み', '確認'];
   // 早押しの回：1問の時間の真ん中が1秒未満の回。記録は残すが、覚えた度合い（間隔反復・やりなおし・逆向きにできる語）には数えない。画面には何も出さない
   var FAST_GAME_MS = 1000;
 
@@ -198,9 +200,11 @@
     for (var i = 0; i < 3; i++) {
       choices.push({ text: q.wrongs[i], correct: false, type: (q.wrongTypes && q.wrongTypes[i]) || '' });
     }
+    var bare = BARE_REASONS.indexOf(reason) >= 0;
     return {
       qid: q.id, key: k, word: q.word, reading: q.reading, type: TYPE_READING,
-      sentence: v.text, variant: v.name, choices: shuffle(choices, rng), hint: q.hint || '',
+      sentence: v.text, variant: bare ? '語だけ' : v.name, bare: bare,
+      choices: shuffle(choices, rng), hint: q.hint || '',
       source: q.source || '', reason: reason, grade: Number(q.grade) || 9,
       quiet: qs.some(function (x) { return !!x.quiet; })
     };
@@ -467,9 +471,24 @@
     return out;
   }
 
+  /* 答えたあとに見せる、字のパーツ。2年生までの字は出さない。1つの語で2字まで
+     parts：{ 字: 'パーツ|名前,パーツ,…' }、g12：1・2年生の字 */
+  function partsOf(word, parts, g12) {
+    var out = [];
+    kanjiOf(word).forEach(function (c) {
+      if (out.length >= 2 || !parts || !parts[c] || (g12 && g12.indexOf(c) >= 0)) return;
+      if (out.some(function (o) { return o.kanji === c; })) return;
+      out.push({ kanji: c, parts: String(parts[c]).split(',').map(function (x) {
+        var a = x.split('|'); return { part: a[0], name: a[1] || '' };
+      }) });
+    });
+    return out;
+  }
+
   return {
+    partsOf: partsOf,
     INTERVALS: INTERVALS, CHECK_DAYS: CHECK_DAYS, SESSION_SIZE: SESSION_SIZE,
-    TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE, MAX_QUIET: MAX_QUIET,
+    TYPE_READING: TYPE_READING, TYPE_REVERSE: TYPE_REVERSE, MAX_REVERSE: MAX_REVERSE, MAX_QUIET: MAX_QUIET, BARE_REASONS: BARE_REASONS,
     MAX_REVIEW: MAX_REVIEW, KNOWN: KNOWN, MAX_GAMES: MAX_GAMES, gamesOn: gamesOn,
     FAST_GAME_MS: FAST_GAME_MS, fastSessions: fastSessions, countedLog: countedLog, progress: progress,
     localDate: localDate, addDays: addDays, itemKey: itemKey, kanjiOf: kanjiOf,
