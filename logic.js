@@ -220,12 +220,15 @@
     g.order.forEach(function (k, i) { rank[k] = i; });
 
     // retry：今日まちがえて、まだ今日のうちに正解していない語（2回目以降で先に出す）
-    var retry = [], due = [], known = [], fresh = [];
+    // checkDue：2週間後の確認の期限が来た語。苦手な語の復習の枠ではなく、正解済みの枠を先に使う
+    // （復習の枠に入れると、苦手な語の復習でいつもうまって、確認に順番が回ってこないため）
+    var retry = [], due = [], known = [], fresh = [], checkDue = [];
     g.order.forEach(function (k) {
       var s = st[k];
       if (!s) { fresh.push(k); return; }
       if (s.status === 'learning' && s.last === today && !s.lastCorrect) retry.push(k);
-      else if ((s.status === 'learning' || s.status === 'check') && s.due <= today) due.push(k);
+      else if (s.status === 'check' && s.due <= today) checkDue.push(k);
+      else if (s.status === 'learning' && s.due <= today) due.push(k);
       else if (s.status === 'done' || s.status === 'check' ||
                (s.status === 'learning' && s.lastCorrect)) known.push(k);
     });
@@ -246,6 +249,10 @@
     known = shuffle(known, rng).sort(function (a, b) {
       return st[a].last < st[b].last ? -1 : st[a].last > st[b].last ? 1 : 0;
     });
+    checkDue = shuffle(checkDue, rng).sort(function (a, b) {
+      return st[a].due < st[b].due ? -1 : st[a].due > st[b].due ? 1 : 0;
+    });
+    known = checkDue.concat(known);
 
     // 逆向きにできる語：読みで（1秒以上かけて）正解したことがあり、漢字の選択肢がそろっている語
     var readOk = {};
@@ -285,10 +292,12 @@
 
     var picks = [];
     rev.forEach(function (k) {
-      var reason = retry.indexOf(k) >= 0 ? 'やりなおし' : st[k].status === 'check' ? '確認' : '復習';
-      picks.push({ k: k, reason: reason });
+      picks.push({ k: k, reason: retry.indexOf(k) >= 0 ? 'やりなおし' : '復習' });
     });
-    kn.forEach(function (k) { picks.push({ k: k, reason: '正解済み' }); });
+    kn.forEach(function (k) {
+      var s = st[k];
+      picks.push({ k: k, reason: s.status === 'check' && s.due <= today ? '確認' : '正解済み' });
+    });
     nw.forEach(function (k) { picks.push({ k: k, reason: '新規' }); });
 
     var items = picks.map(function (p) { return makeItem(p.k, p.reason, g.groups, rng); });
